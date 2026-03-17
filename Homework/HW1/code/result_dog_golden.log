@@ -1,0 +1,105 @@
+Top 100 classes:
+=================================================
+  idx |      val | possibility | class name
+-------------------------------------------------
+  207 |   16.595 |      38.628 | golden retriever
+  175 |   15.570 |      13.861 | otterhound
+  220 |   15.362 |      11.260 | Sussex spaniel
+  163 |   15.003 |       7.862 | bloodhound
+  219 |   14.593 |       5.221 | cocker spaniel
+  168 |   14.394 |       4.278 | redbone
+  160 |   14.345 |       4.074 | Afghan hound
+  213 |   14.183 |       3.464 | Irish setter
+  291 |   14.101 |       3.192 | lion
+  211 |   13.006 |       1.068 | vizsla
+  244 |   12.813 |       0.880 | Tibetan mastiff
+  216 |   12.690 |       0.778 | clumber
+  200 |   12.462 |       0.620 | Tibetan terrier
+  159 |   12.415 |       0.591 | Rhodesian ridgeback
+  152 |   12.378 |       0.570 | Japanese spaniel
+  167 |   12.006 |       0.393 | English foxhound
+  208 |   11.650 |       0.275 | Labrador retriever
+  294 |   11.633 |       0.270 | brown bear
+  165 |   11.508 |       0.239 | black-and-tan coonhound
+  262 |   11.465 |       0.229 | Brabancon griffon
+  156 |   11.401 |       0.215 | Blenheim spaniel
+  185 |   11.289 |       0.192 | Norfolk terrier
+  260 |   11.112 |       0.161 | chow
+  267 |   11.083 |       0.156 | standard poodle
+  365 |   10.870 |       0.126 | orangutan
+  154 |   10.737 |       0.110 | Pekinese
+  368 |   10.700 |       0.106 | gibbon
+  215 |   10.659 |       0.102 | Brittany spaniel
+  161 |   10.590 |       0.095 | basset
+  214 |   10.466 |       0.084 | Gordon setter
+  176 |   10.395 |       0.078 | Saluki
+  212 |   10.311 |       0.072 | English setter
+  852 |    9.884 |       0.047 | tennis ball
+  255 |    9.872 |       0.046 | Leonberg
+  194 |    9.770 |       0.042 | Dandie Dinmont
+  672 |    9.589 |       0.035 | mountain tent
+  274 |    9.443 |       0.030 | dhole
+  335 |    9.442 |       0.030 | fox squirrel
+  371 |    9.397 |       0.029 | patas
+  190 |    9.315 |       0.027 | Sealyham terrier
+  384 |    9.291 |       0.026 | indri
+  193 |    9.147 |       0.023 | Australian terrier
+  166 |    8.999 |       0.019 | Walker hound
+  206 |    8.915 |       0.018 | curly-coated retriever
+  380 |    8.903 |       0.018 | titi
+  170 |    8.858 |       0.017 | Irish wolfhound
+  191 |    8.852 |       0.017 | Airedale
+  379 |    8.844 |       0.017 | howler monkey
+  243 |    8.766 |       0.015 | bull mastiff
+  189 |    8.590 |       0.013 | Lakeland terrier
+  218 |    8.566 |       0.013 | Welsh springer spaniel
+  182 |    8.528 |       0.012 | Border terrier
+  187 |    8.527 |       0.012 | Yorkshire terrier
+  209 |    8.507 |       0.012 | Chesapeake Bay retriever
+  273 |    8.366 |       0.010 | dingo
+  222 |    8.323 |       0.010 | kuvasz
+  226 |    8.288 |       0.010 | briard
+  382 |    8.226 |       0.009 | squirrel monkey
+  169 |    8.176 |       0.009 | borzoi
+  373 |    8.171 |       0.008 | macaque
+  256 |    8.117 |       0.008 | Newfoundland
+  155 |    8.091 |       0.008 | Shih-Tzu
+  186 |    8.041 |       0.007 | Norwich terrier
+  299 |    7.831 |       0.006 | meerkat
+  184 |    7.816 |       0.006 | Irish terrier
+  164 |    7.738 |       0.006 | bluetick
+  162 |    7.704 |       0.005 | beagle
+  292 |    7.632 |       0.005 | tiger
+  266 |    7.616 |       0.005 | miniature poodle
+  298 |    7.436 |       0.004 | mongoose
+  231 |    7.400 |       0.004 | collie
+  257 |    7.333 |       0.004 | Great Pyrenees
+  158 |    7.333 |       0.004 | toy terrier
+  181 |    7.313 |       0.004 | Bedlington terrier
+  188 |    7.282 |       0.003 | wire-haired fox terrier
+  265 |    7.281 |       0.003 | toy poodle
+  247 |    7.251 |       0.003 | Saint Bernard
+  264 |    7.231 |       0.003 | Cardigan
+  221 |    7.231 |       0.003 | Irish water spaniel
+  463 |    7.169 |       0.003 | bucket
+  101 |    7.144 |       0.003 | tusker
+  180 |    7.083 |       0.003 | American Staffordshire terrier
+  238 |    7.073 |       0.003 | Greater Swiss Mountain dog
+  201 |    7.033 |       0.003 | silky terrier
+  354 |    7.031 |       0.003 | Arabian camel
+  339 |    6.987 |       0.003 | sorrel
+  204 |    6.890 |       0.002 | Lhasa
+  235 |    6.877 |       0.002 | German shepherd
+  183 |    6.790 |       0.002 | Kerry blue terrier
+  271 |    6.772 |       0.002 | red wolf
+  286 |    6.662 |       0.002 | cougar
+  227 |    6.655 |       0.002 | kelpie
+  370 |    6.622 |       0.002 | guenon
+  252 |    6.599 |       0.002 | affenpinscher
+  372 |    6.518 |       0.002 | baboon
+  377 |    6.513 |       0.002 | marmoset
+  240 |    6.486 |       0.002 | Appenzeller
+  202 |    6.485 |       0.002 | soft-coated wheaten terrier
+  151 |    6.483 |       0.002 | Chihuahua
+  369 |    6.430 |       0.001 | siamang
+=================================================
