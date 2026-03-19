@@ -3,9 +3,6 @@
 
 using namespace std;
 
-// ============================================================
-// Constructor
-// ============================================================
 AlexNet::AlexNet(sc_module_name name) : sc_module(name) {
     input_layer = new InputLayer("input_layer");
     conv1       = new ConvLayer("conv1");
@@ -31,9 +28,7 @@ AlexNet::~AlexNet() {
     delete softmax;
 }
 
-// ============================================================
 // Build: configure layer parameters and load weights
-// ============================================================
 void AlexNet::build(const string& weight_dir) {
     data_dir = weight_dir;
     init_layers();
@@ -147,9 +142,7 @@ void AlexNet::load_weights() {
     cout << "[INFO] Weights loaded." << endl;
 }
 
-// ============================================================
 // Forward Pass
-// ============================================================
 void AlexNet::forward(const string& image_path) {
     cout << "[INFO] Loading image: " << image_path << endl;
 
@@ -221,10 +214,8 @@ void AlexNet::forward(const string& image_path) {
     cout << "[INFO] Softmax done." << endl;
 }
 
-// ============================================================
 // Flatten pool5 output: [256][6][6] -> flat[9216]
 // Channel-first raster scan
-// ============================================================
 void AlexNet::flatten_pool5() {
     flat.clear();
     flat.reserve(9216);

@@ -10,9 +10,7 @@
 #include <cmath>
 #include <iostream>
 
-// ============================================================
 // Utility: load a flat txt file into a float vector
-// ============================================================
 inline std::vector<float> load_txt(const std::string& path) {
     std::vector<float> data;
     std::ifstream f(path);
@@ -51,9 +49,7 @@ SC_MODULE(InputLayer) {
     }
 };
 
-// ============================================================
 // ConvLayer: Convolution + ReLU
-// ============================================================
 SC_MODULE(ConvLayer) {
     // Parameters (set before process())
     int in_channels, out_channels;
@@ -112,9 +108,7 @@ SC_MODULE(ConvLayer) {
     }
 };
 
-// ============================================================
 // MaxPoolLayer: Max Pooling
-// ============================================================
 SC_MODULE(MaxPoolLayer) {
     int channels, pool_size, stride;
     int in_h, in_w;
@@ -141,9 +135,7 @@ SC_MODULE(MaxPoolLayer) {
     }
 };
 
-// ============================================================
 // FCLayer: Fully Connected + optional ReLU
-// ============================================================
 SC_MODULE(FCLayer) {
     int in_features, out_features;
     bool use_relu;
@@ -172,9 +164,7 @@ SC_MODULE(FCLayer) {
     }
 };
 
-// ============================================================
 // SoftmaxLayer
-// ============================================================
 SC_MODULE(SoftmaxLayer) {
     std::vector<float>* input;
     std::vector<float>  output;
