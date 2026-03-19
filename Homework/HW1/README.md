@@ -103,6 +103,7 @@ make <cat|dog>
 ### How to submit
 First, compress your code into a tar archive
 ```
+cd 09_SUMIT
 ./00_tar
 ```
 Then submit to the TA server
