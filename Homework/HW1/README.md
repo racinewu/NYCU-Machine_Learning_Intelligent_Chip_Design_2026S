@@ -4,6 +4,9 @@ AlexNet is a deep convolutional neural network originally designed for large-sca
 ## Problem Formulation
 Given a 224×224 RGB image and a set of pre-trained weights exported from PyTorch, the network must perform a full forward pass through five convolutional layers, three max-pooling layers, and three fully connected layers, followed by a Softmax layer. The output is a probability distribution over 1000 ImageNet classes, and the top-100 predictions must be displayed with their corresponding logit values and probabilities.
 
+> [!NOTE]
+> Use AlexNet model parameters from the information table. Ignore incorrect values in the example figure.
+
 ## Features
 - **Full AlexNet Architecture**: Implements all layers of the original AlexNet including Conv, MaxPool, FC, and Softmax.
 - **Modular SC_MODULE Design**: Each layer is encapsulated as an independent SystemC module for clarity and reusability.
@@ -85,7 +88,7 @@ HW1/
   └── README.md
 ```
 > [!NOTE]
-> Note: data folder are not included in this repository due to capacity limit.
+> Data folder are not included in this repository due to capacity limit.
 
 ## Usage Guide
 > [!IMPORTANT]
