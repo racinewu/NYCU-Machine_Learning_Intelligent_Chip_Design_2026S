@@ -75,6 +75,8 @@ HW1/
   │   ├── other
   │   │   ├── cat.jpg
   │   │   └── dog.jpg
+  │   ├── result_cat_golden.log
+  │   ├── result_dog_golden.log
   │   │
   │   ├── run                      // Final executable, e.g., run
   │   ├── Makefile                 // Build script to compile the project
