@@ -1,0 +1,78 @@
+rm -rf run
+g++ -I . -I  /RAID2/COURSE/2026_Spring/es26mlchip/es26mlchipTA10//systemc-2.3.3/include -L . -L /RAID2/COURSE/2026_Spring/es26mlchip/es26mlchipTA10//systemc-2.3.3/lib-linux64 -o run *.cpp -lsystemc-2.3.3 -Wl,-rpath,/RAID2/COURSE/2026_Spring/es26mlchip/es26mlchipTA10//systemc-2.3.3/lib-linux64 -g -w -O3
+
+        SystemC 2.3.3-Accellera --- Mar  3 2026 15:59:48
+        Copyright (c) 1996-2018 by all Contributors,
+        ALL RIGHTS RESERVED
+0 s:module1 writes to channel, string =0
+0 s:module2 reads from channel, string=0
+0 s:module2 writes to channel, string=0
+0 s:module3 reads from channel, string=0
+0 s:module3 writes to channel, string=0
+0 s:checker reads from channel, string=0
+[32mdata is correct at time 0 s[0m
+5 s:module1 writes to channel, string =5
+5 s:module2 reads from channel, string=5
+5 s:module2 writes to channel, string=5
+5 s:module3 reads from channel, string=5
+5 s:module3 writes to channel, string=5
+5 s:checker reads from channel, string=5
+[32mdata is correct at time 5 s[0m
+10 s:module1 writes to channel, string =10
+10 s:module2 reads from channel, string=10
+10 s:module2 writes to channel, string=10
+10 s:module3 reads from channel, string=10
+10 s:module3 writes to channel, string=10
+10 s:checker reads from channel, string=10
+[32mdata is correct at time 10 s[0m
+15 s:module1 writes to channel, string =15
+15 s:module2 reads from channel, string=15
+15 s:module2 writes to channel, string=15
+15 s:module3 reads from channel, string=15
+15 s:module3 writes to channel, string=15
+15 s:checker reads from channel, string=15
+[32mdata is correct at time 15 s[0m
+20 s:module1 writes to channel, string =20
+20 s:module2 reads from channel, string=20
+20 s:module2 writes to channel, string=20
+20 s:module3 reads from channel, string=20
+20 s:module3 writes to channel, string=20
+20 s:checker reads from channel, string=20
+[32mdata is correct at time 20 s[0m
+25 s:module1 writes to channel, string =25
+25 s:module2 reads from channel, string=25
+25 s:module2 writes to channel, string=25
+25 s:module3 reads from channel, string=25
+25 s:module3 writes to channel, string=25
+25 s:checker reads from channel, string=25
+[32mdata is correct at time 25 s[0m
+30 s:module1 writes to channel, string =30
+30 s:module2 reads from channel, string=30
+30 s:module2 writes to channel, string=30
+30 s:module3 reads from channel, string=30
+30 s:module3 writes to channel, string=30
+30 s:checker reads from channel, string=30
+[32mdata is correct at time 30 s[0m
+35 s:module1 writes to channel, string =35
+35 s:module2 reads from channel, string=35
+35 s:module2 writes to channel, string=35
+35 s:module3 reads from channel, string=35
+35 s:module3 writes to channel, string=35
+35 s:checker reads from channel, string=35
+[32mdata is correct at time 35 s[0m
+40 s:module1 writes to channel, string =40
+40 s:module2 reads from channel, string=40
+40 s:module2 writes to channel, string=40
+40 s:module3 reads from channel, string=40
+40 s:module3 writes to channel, string=40
+40 s:checker reads from channel, string=40
+[32mdata is correct at time 40 s[0m
+45 s:module1 writes to channel, string =45
+45 s:module2 reads from channel, string=45
+45 s:module2 writes to channel, string=45
+45 s:module3 reads from channel, string=45
+45 s:module3 writes to channel, string=45
+45 s:checker reads from channel, string=45
+[32mdata is correct at time 45 s[0m
+[32mAll data is correct[0m
+[35mCongratulations! You have passed the test[0m
