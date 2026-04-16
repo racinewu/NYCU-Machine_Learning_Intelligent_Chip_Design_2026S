@@ -55,7 +55,7 @@ for i in "${!DIRS[@]}"; do
     echo -e "${GREEN}[Info] Directory created: $TARGET_DIR${NO_COLOR}"
 
     ########################################################################
-    # (2) Copy all .h and .cpp files and rename them
+    # (2) Copy all .h, .hpp and .cpp files and rename them
     ########################################################################
     for file in "$src_dir"/*; do
         if [ -f "$file" ]; then  # Ensure it's a valid file
@@ -63,7 +63,7 @@ for i in "${!DIRS[@]}"; do
             filename="${file%.*}"
             base_filename=$(basename "$filename")
 
-            if [[ "$ext" == "h" || "$ext" == "cpp" ]]; then
+            if [[ "$ext" == "h" || "$ext" == "hpp" || "$ext" == "cpp" ]]; then
                 cp "$file" "$TARGET_DIR/${base_filename}_${dir}_${ID}.$ext"
                 echo -e "${CYAN}[Info] Copied: $file -> $TARGET_DIR/${base_filename}_${dir}_${ID}.$ext${NO_COLOR}"
             fi
