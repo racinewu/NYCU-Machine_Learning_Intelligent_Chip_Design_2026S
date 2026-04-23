@@ -64,7 +64,7 @@ HW2/
   ├── code
   │   ├── 00_TESTBED
   │   │   ├── Makefile                  // Build script to compile the project
-  │   │   ├── Pattern.cpp
+  │   │   ├── Pattern.cpp               // Loading input images and verifying classification results
   │   │   ├── Pattern.h
   │   │   └── data
   │   │       ├── cat.txt               // Cat image input
@@ -87,20 +87,20 @@ HW2/
   │           ├── result_dog_golden.log
   │           ├── run                   // Final executable, e.g., run
   │           │
-  │           ├── alexnet_<channel>.cpp
-  │           ├── alexnet_<channel>.h
-  │           ├── moduleA.h
-  │           ├── moduleB.h
-  │           ├── moduleC.h
-  │           ├── layers.h
+  │           ├── alexnet_<channel>.cpp // Entry point; runs AlexNet forward pass
+  │           ├── alexnet_<channel>.h   // Top-level module
+  │           ├── moduleA.h             // Input, Conv1, and Pool1 layers
+  │           ├── moduleB.h             // Conv2-5 and Pool5 layers
+  │           ├── moduleC.h             // FC layers and Softmax output
+  │           └── layers.h              // Layer computation logic and custom signal structures
   │
   ├── HW2.pdf
   └── README.md
 ```
 ## Usage Guide
 > [!IMPORTANT]
-> All source files must be placed within folders of `SC_SIGNAL|SC_BUFFER|SC_FIFO` for compilation, execution, and submission to work correctly.
-> In the official package, `Makefile` and `Pattern` are placed in `00_TESTBED` and already symlinked into each `01_SOURCE/<channel>` directory.
+> All source files must be placed within folders of `SC_SIGNAL|SC_BUFFER|SC_FIFO` for compilation, execution, and submission to work correctly.  
+> In the official package, `Makefile` and `Pattern` are placed in `00_TESTBED` and already symlinked into each `01_SOURCE/<channel>` directory.  
 > If you reconstruct the project manually, ensure these symbolic links are created accordingly.
 To generate the executable `run`, simply run
 ```
