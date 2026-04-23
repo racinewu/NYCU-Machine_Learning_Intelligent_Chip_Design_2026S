@@ -104,7 +104,7 @@ HW2/
 > If you reconstruct the project manually, ensure these symbolic links are created accordingly.
 To generate the executable `run`, simply run
 ```
-cd <folder>
+cd 01_SOURCE/<channel>
 make
 ```
 ### How to execute
