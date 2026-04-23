@@ -102,6 +102,7 @@ HW2/
 > All source files must be placed within folders of `SC_SIGNAL|SC_BUFFER|SC_FIFO` for compilation, execution, and submission to work correctly.  
 > In the official package, `Makefile` and `Pattern` are placed in `00_TESTBED` and already symlinked into each `01_SOURCE/<channel>` directory.  
 > If you reconstruct the project manually, ensure these symbolic links are created accordingly.
+
 To generate the executable `run`, simply run
 ```
 cd 01_SOURCE/<channel>
