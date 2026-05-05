@@ -9,12 +9,12 @@ SC_MODULE( Core ) {
     sc_in  < bool >  clk;
     // receive
     sc_in  < sc_lv<34> > flit_rx;
-    sc_in  < bool > req_rx;      
-    sc_out < bool > ack_rx;      
+    sc_in  < bool > req_rx;
+    sc_out < bool > ack_rx;
     // transmit
     sc_out < sc_lv<34> > flit_tx;
-    sc_out < bool > req_tx;      
-    sc_in  < bool > ack_tx;      
+    sc_out < bool > req_tx;
+    sc_in  < bool > ack_tx;
 
     PE pe;
     int core_id;
@@ -24,40 +24,38 @@ SC_MODULE( Core ) {
         pe.init(id);
     }
 
+    // Standard 4-phase handshake: req up -> wait ack up -> req down -> wait ack down
+    // Applied uniformly to every flit (header, body, tail).
+    // This is the safest approach given the req/ack port interface.
+    void send_flit(sc_lv<34> f) {
+        req_tx.write(1);
+        flit_tx.write(f);
+        while (ack_tx.read() == 0) wait();
+        req_tx.write(0);
+        while (ack_tx.read() == 1) wait();
+    }
+
     void tx_thread() {
-        while(true) {
+        while (true) {
             Packet* p = pe.get_packet();
             if (p != NULL) {
-
+                // Header flit
                 sc_lv<34> h;
-                h.range(33, 32) = 2; // Type: 10 (Header)
+                h.range(33, 32) = 2;
                 h.range(31, 16) = p->dest_id;
-                h.range(15, 0) = p->source_id;
-                
-                req_tx.write(1);
-                flit_tx.write(h);
-                while(ack_tx.read() == 0) wait();
-                req_tx.write(0);
-                while(ack_tx.read() == 1) wait();
+                h.range(15,  0) = p->source_id;
+                send_flit(h);
 
-
+                // Body and Tail flits
                 for (size_t i = 0; i < p->datas.size(); i++) {
                     sc_lv<34> f;
-                    if (i == p->datas.size() - 1) {
-                        f.range(33, 32) = 1; // Type: 01 (Tail)
-                    } else {
-                        f.range(33, 32) = 0; // Type: 00 (Body)
-                    }
-                    union { float fval; unsigned int ival; } converter;
-                    converter.fval = p->datas[i];
-                    f.range(31, 0) = converter.ival;
-
-                    req_tx.write(1);
-                    flit_tx.write(f);
-                    while(ack_tx.read() == 0) wait();
-                    req_tx.write(0);
-                    while(ack_tx.read() == 1) wait();
+                    f.range(33, 32) = (i == p->datas.size() - 1) ? 1 : 0;
+                    union { float fval; unsigned int ival; } cv;
+                    cv.fval = p->datas[i];
+                    f.range(31, 0) = cv.ival;
+                    send_flit(f);
                 }
+                delete p;
             }
             wait();
         }
@@ -65,28 +63,28 @@ SC_MODULE( Core ) {
 
     void rx_thread() {
         Packet* p = NULL;
-        while(true) {
-            while(req_rx.read() == 0) wait();
+        while (true) {
+            while (req_rx.read() == 0) wait();
             sc_lv<34> f = flit_rx.read();
-            
+
             ack_rx.write(1);
-            while(req_rx.read() == 1) wait();
+            while (req_rx.read() == 1) wait();
             ack_rx.write(0);
 
             unsigned int type = f.range(33, 32).to_uint();
-            if (type == 2) { // Header
+            if (type == 2) {
                 p = new Packet();
-                p->dest_id = f.range(31, 16).to_uint();
-                p->source_id = f.range(15, 0).to_uint();
+                p->dest_id   = f.range(31, 16).to_uint();
+                p->source_id = f.range(15,  0).to_uint();
             } else if (type == 0 || type == 1) {
-                union { float fval; unsigned int ival; } converter;
-                converter.ival = f.range(31, 0).to_uint();
+                union { float fval; unsigned int ival; } cv;
+                cv.ival = f.range(31, 0).to_uint();
                 if (p != NULL) {
-                    p->datas.push_back(converter.fval);
-                    if (type == 1) { // Tail
+                    p->datas.push_back(cv.fval);
+                    if (type == 1) {
                         pe.check_packet(p);
                         delete p;
-                        p = NULL; 
+                        p = NULL;
                     }
                 }
             }

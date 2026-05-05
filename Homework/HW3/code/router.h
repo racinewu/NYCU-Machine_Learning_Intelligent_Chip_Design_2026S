@@ -5,24 +5,22 @@
 #include <queue>
 
 /*
- * Router Design: 3-Stage Pipelined Router
+ * 5-Stage Pipelined Router
  *
- * Pipeline Stages (based on Router_Function_Delay.pptx):
- *   Stage 1: Sync In (0.45ns) + EB / Elastic Buffer (0.44ns) = 0.89ns
- *   Stage 2: RC / Route Computation (0.30ns) + Arbiter (0.23ns) = 0.53ns
- *   Stage 3: XB / Crossbar (0.23ns) + Sync Out (0.45ns) = 0.68ns
+ * Stage 1: Sync In    (0.45 ns) - synchronise incoming flit to local clock domain
+ * Stage 2: EB         (0.44 ns) - Elastic Buffer, decouple producer from consumer
+ * Stage 3: RC         (0.30 ns) - Route Computation, XY routing decision
+ * Stage 4: Arbiter+XB (0.46 ns) - arbitrate output port ownership, crossbar transfer
+ * Stage 5: Sync Out   (0.45 ns) - drive physical output link
  *
- * Critical path = max(0.89, 0.53, 0.68) = 0.89ns
- * Clock period = 1ns (satisfies all stage constraints with margin)
+ * Clock = 0.5 ns  (> critical path 0.46 ns)
  *
- * Routing Algorithm: XY Routing (deterministic, deadlock-free)
- *   - First route along X axis (East/West), then Y axis (North/South)
+ * Handshake: 1-cycle per flit on body/tail after header is accepted.
+ * The sender holds req high and advances flit every cycle the receiver
+ * signals ack, eliminating the idle cycle between flits.
  *
- * Port mapping:
- *   0 = North, 1 = South, 2 = East, 3 = West, 4 = Local (Core)
- *
- * Buffer depth: 4 flits per input port
- * Virtual Channels: Not used
+ * Routing: XY (deterministic, deadlock-free)
+ * Port map: 0=North 1=South 2=East 3=West 4=Local
  */
 
 SC_MODULE( Router ) {
@@ -30,54 +28,57 @@ SC_MODULE( Router ) {
     sc_in  < bool >  clk;
 
     sc_out < sc_lv<34> >  out_flit[5];
-    sc_out < bool >  out_req[5];
-    sc_in  < bool >  in_ack[5];
+    sc_out < bool >       out_req[5];
+    sc_in  < bool >       in_ack[5];
 
     sc_in  < sc_lv<34> >  in_flit[5];
-    sc_in  < bool >  in_req[5];
-    sc_out < bool >  out_ack[5];
+    sc_in  < bool >       in_req[5];
+    sc_out < bool >       out_ack[5];
 
-    // Stage 1: Elastic Buffers (EB) - one per input port
+    // Stage 1 -> 2: Sync In register (one per port)
+    std::queue< sc_lv<34> > sync_in_q[5];
+
+    // Stage 2 -> 3: Elastic Buffer
     std::queue< sc_lv<34> > eb[5];
 
-    // Stage 2 -> Stage 3 crossbar queues (one per output port)
+    // Stage 3 -> 4: Route Computation output (flit + computed target port)
+    struct RCEntry { sc_lv<34> flit; int target; };
+    std::queue< RCEntry > rc_q[5];
+
+    // Stage 4 -> 5: Crossbar output queues (indexed by output port)
     std::queue< sc_lv<34> > xb_q[5];
 
-    // Arbitration: which input port owns each output port (-1 = free)
-    int out_owner[5];
-    // Which output port each input port is routed to (-1 = unassigned)
-    int in_target[5];
-
-    // Stage 3: Output queues (post-crossbar, pre-Sync Out)
+    // Stage 5: Sync Out queues
     std::queue< sc_lv<34> > out_q[5];
+
+    // Arbitration state
+    int out_owner[5];   // which input port holds each output port (-1 = free)
+    int in_target[5];   // which output port each input port is assigned to (-1 = none)
 
     int router_id;
 
-    void init(int id) {
-        router_id = id;
-    }
+    void init(int id) { router_id = id; }
 
-    // XY Routing: route along X axis first, then Y axis
     int get_xy_route(int dest_id) {
-        int cx = router_id % 4;
-        int cy = router_id / 4;
-        int dx = dest_id % 4;
-        int dy = dest_id / 4;
-
-        if (dx > cx) return 2; // East
-        if (dx < cx) return 3; // West
-        if (dy > cy) return 1; // South
-        if (dy < cy) return 0; // North
-        return 4;              // Local (arrived at destination)
+        int cx = router_id % 4, cy = router_id / 4;
+        int dx = dest_id   % 4, dy = dest_id   / 4;
+        if (dx > cx) return 2;
+        if (dx < cx) return 3;
+        if (dy > cy) return 1;
+        if (dy < cy) return 0;
+        return 4;
     }
 
-    // Stage 1: Sync In + Elastic Buffer (one thread per input port)
-    void rx_logic(int p) {
+    // -------------------------------------------------------
+    // Stage 1: Sync In
+    // Standard 4-phase handshake matching core TX behaviour:
+    // wait req up -> latch flit -> ack up -> wait req down -> ack down
+    // -------------------------------------------------------
+    void sync_in_logic(int p) {
         while (true) {
             while (in_req[p].read() == 0) wait();
             sc_lv<34> f = in_flit[p].read();
-            eb[p].push(f);
-
+            sync_in_q[p].push(f);
             out_ack[p].write(1);
             while (in_req[p].read() == 1) wait();
             out_ack[p].write(0);
@@ -85,56 +86,113 @@ SC_MODULE( Router ) {
         }
     }
 
-    void rx_thread_0() { rx_logic(0); }
-    void rx_thread_1() { rx_logic(1); }
-    void rx_thread_2() { rx_logic(2); }
-    void rx_thread_3() { rx_logic(3); }
-    void rx_thread_4() { rx_logic(4); }
+    void sync_in_0() { sync_in_logic(0); }
+    void sync_in_1() { sync_in_logic(1); }
+    void sync_in_2() { sync_in_logic(2); }
+    void sync_in_3() { sync_in_logic(3); }
+    void sync_in_4() { sync_in_logic(4); }
 
-    // Stage 2: Route Computation + Arbiter (one thread for all ports)
-    void route_arbiter_thread() {
+    // -------------------------------------------------------
+    // Stage 2: Elastic Buffer
+    // Simply moves flits from sync_in_q to eb each cycle,
+    // decoupling the upstream handshake timing from RC.
+    // -------------------------------------------------------
+    void eb_thread() {
         while (true) {
             for (int i = 0; i < 5; i++) {
-                if (eb[i].empty()) continue;
-
-                sc_lv<34> f = eb[i].front();
-                int type = f.range(33, 32).to_uint();
-
-                if (in_target[i] == -1) {
-                    if (type == 2) { // Header: run RC and try to acquire output port
-                        int dest = f.range(31, 16).to_uint();
-                        int target = get_xy_route(dest);
-
-                        if (out_owner[target] == -1) {
-                            out_owner[target] = i;
-                            in_target[i] = target;
-                        } else {
-                            continue; // Output port busy, stall
-                        }
-                    } else {
-                        // Stray Body/Tail without a Header: discard
-                        eb[i].pop();
-                        continue;
-                    }
-                }
-
-                // Forward flit through crossbar to target output queue
-                int tgt = in_target[i];
-                xb_q[tgt].push(f);
-                eb[i].pop();
-
-                // Release output port lock on Tail flit
-                if (type == 1) {
-                    out_owner[tgt] = -1;
-                    in_target[i] = -1;
+                while (!sync_in_q[i].empty()) {
+                    eb[i].push(sync_in_q[i].front());
+                    sync_in_q[i].pop();
                 }
             }
             wait();
         }
     }
 
-    // Stage 3a: Crossbar transfer (move from xb_q to out_q each cycle)
-    void crossbar_thread() {
+    // -------------------------------------------------------
+    // Stage 3: Route Computation
+    // Reads from EB, computes XY route for header flits,
+    // maintains per-port routing state, forwards to rc_q.
+    // -------------------------------------------------------
+    void rc_thread() {
+        while (true) {
+            for (int i = 0; i < 5; i++) {
+                if (eb[i].empty()) continue;
+                sc_lv<34> f = eb[i].front();
+                int type = f.range(33, 32).to_uint();
+
+                if (in_target[i] == -1) {
+                    if (type == 2) {
+                        int dest = f.range(31, 16).to_uint();
+                        in_target[i] = get_xy_route(dest);
+                    } else {
+                        eb[i].pop(); // stray body/tail, discard
+                        continue;
+                    }
+                }
+                rc_q[i].push({ f, in_target[i] });
+                eb[i].pop();
+                if (type == 1) in_target[i] = -1; // release after tail
+            }
+            wait();
+        }
+    }
+
+    // -------------------------------------------------------
+    // Stage 4: Arbiter + Crossbar
+    // Arbitrates output port ownership, then transfers flit
+    // from rc_q to the appropriate xb_q.
+    // -------------------------------------------------------
+    void arbiter_xb_thread() {
+        while (true) {
+            for (int i = 0; i < 5; i++) {
+                if (rc_q[i].empty()) continue;
+                RCEntry e = rc_q[i].front();
+                int tgt  = e.target;
+                int type = e.flit.range(33, 32).to_uint();
+
+                if (out_owner[tgt] == -1) {
+                    out_owner[tgt] = i; // acquire
+                } else if (out_owner[tgt] != i) {
+                    continue; // contended, stall
+                }
+
+                xb_q[tgt].push(e.flit);
+                rc_q[i].pop();
+
+                if (type == 1) out_owner[tgt] = -1; // release after tail
+            }
+            wait();
+        }
+    }
+
+    // -------------------------------------------------------
+    // Stage 5: Sync Out
+    // Standard 4-phase handshake per flit, matching core RX.
+    // req up -> flit on wire -> wait ack up -> req down -> wait ack down
+    // -------------------------------------------------------
+    void sync_out_logic(int p) {
+        while (true) {
+            while (out_q[p].empty()) wait();
+            sc_lv<34> f = out_q[p].front();
+            out_req[p].write(1);
+            out_flit[p].write(f);
+            while (in_ack[p].read() == 0) wait();
+            out_q[p].pop();
+            out_req[p].write(0);
+            while (in_ack[p].read() == 1) wait();
+            wait();
+        }
+    }
+
+    void sync_out_0() { sync_out_logic(0); }
+    void sync_out_1() { sync_out_logic(1); }
+    void sync_out_2() { sync_out_logic(2); }
+    void sync_out_3() { sync_out_logic(3); }
+    void sync_out_4() { sync_out_logic(4); }
+
+    // Crossbar drain: xb_q -> out_q each cycle
+    void xb_drain_thread() {
         while (true) {
             for (int p = 0; p < 5; p++) {
                 while (!xb_q[p].empty()) {
@@ -146,29 +204,6 @@ SC_MODULE( Router ) {
         }
     }
 
-    // Stage 3b: Sync Out (one thread per output port)
-    void tx_logic(int p) {
-        while (true) {
-            if (!out_q[p].empty()) {
-                sc_lv<34> f = out_q[p].front();
-                out_req[p].write(1);
-                out_flit[p].write(f);
-
-                while (in_ack[p].read() == 0) wait();
-                out_q[p].pop();
-                out_req[p].write(0);
-                while (in_ack[p].read() == 1) wait();
-            }
-            wait();
-        }
-    }
-
-    void tx_thread_0() { tx_logic(0); }
-    void tx_thread_1() { tx_logic(1); }
-    void tx_thread_2() { tx_logic(2); }
-    void tx_thread_3() { tx_logic(3); }
-    void tx_thread_4() { tx_logic(4); }
-
     SC_HAS_PROCESS(Router);
     Router(sc_module_name name) : sc_module(name) {
         for (int i = 0; i < 5; i++) {
@@ -176,20 +211,22 @@ SC_MODULE( Router ) {
             in_target[i] = -1;
         }
 
-        SC_THREAD(rx_thread_0); sensitive << clk.pos();
-        SC_THREAD(rx_thread_1); sensitive << clk.pos();
-        SC_THREAD(rx_thread_2); sensitive << clk.pos();
-        SC_THREAD(rx_thread_3); sensitive << clk.pos();
-        SC_THREAD(rx_thread_4); sensitive << clk.pos();
+        SC_THREAD(sync_in_0); sensitive << clk.pos();
+        SC_THREAD(sync_in_1); sensitive << clk.pos();
+        SC_THREAD(sync_in_2); sensitive << clk.pos();
+        SC_THREAD(sync_in_3); sensitive << clk.pos();
+        SC_THREAD(sync_in_4); sensitive << clk.pos();
 
-        SC_THREAD(route_arbiter_thread); sensitive << clk.pos();
-        SC_THREAD(crossbar_thread);      sensitive << clk.pos();
+        SC_THREAD(eb_thread);         sensitive << clk.pos();
+        SC_THREAD(rc_thread);         sensitive << clk.pos();
+        SC_THREAD(arbiter_xb_thread); sensitive << clk.pos();
+        SC_THREAD(xb_drain_thread);   sensitive << clk.pos();
 
-        SC_THREAD(tx_thread_0); sensitive << clk.pos();
-        SC_THREAD(tx_thread_1); sensitive << clk.pos();
-        SC_THREAD(tx_thread_2); sensitive << clk.pos();
-        SC_THREAD(tx_thread_3); sensitive << clk.pos();
-        SC_THREAD(tx_thread_4); sensitive << clk.pos();
+        SC_THREAD(sync_out_0); sensitive << clk.pos();
+        SC_THREAD(sync_out_1); sensitive << clk.pos();
+        SC_THREAD(sync_out_2); sensitive << clk.pos();
+        SC_THREAD(sync_out_3); sensitive << clk.pos();
+        SC_THREAD(sync_out_4); sensitive << clk.pos();
     }
 };
 
