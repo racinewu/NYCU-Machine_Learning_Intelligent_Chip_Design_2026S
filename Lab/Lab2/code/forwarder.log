@@ -1,0 +1,54 @@
+rm -rf run
+g++ -I . -I  /RAID2/COURSE/2026_Spring/es26mlchip/es26mlchipTA10//systemc-2.3.3/include -L . -L /RAID2/COURSE/2026_Spring/es26mlchip/es26mlchipTA10//systemc-2.3.3/lib-linux64 -o run *.cpp -lsystemc-2.3.3 -Wl,-rpath,/RAID2/COURSE/2026_Spring/es26mlchip/es26mlchipTA10//systemc-2.3.3/lib-linux64 -g -w -O3
+
+        SystemC 2.3.3-Accellera --- Mar  3 2026 15:59:48
+        Copyright (c) 1996-2018 by all Contributors,
+        ALL RIGHTS RESERVED
+Simulation starting...
+@ 1 ns Asserting reset (ARESETn = 0)
+1 ns: Producer: Resetting...
+1 ns: Checker: Resetting...
+10 ns: Producer: Resetting...
+10 ns: Checker: Resetting...
+@ 11 ns De-asserting reset (ARESETn = 1)
+20 ns: Producer: Sent 'H' (TLAST=0)
+30 ns: Producer: Sent 'E' (TLAST=0)
+40 ns: Producer: Sent 'L' (TLAST=0)
+40 ns: Checker: Received 'H' (TLAST=0)
+50 ns: Producer: Sent 'L' (TLAST=0)
+50 ns: Checker: Received 'E' (TLAST=0)
+60 ns: Producer: Sent 'O' (TLAST=1)
+60 ns: Checker: Received 'L' (TLAST=0)
+70 ns: Producer: Moving to next string: NYCU
+70 ns: Checker: Received 'L' (TLAST=0)
+80 ns: Producer: Sent 'N' (TLAST=0)
+80 ns: Checker: Received 'O' (TLAST=1)
+80 ns: Checker: Full string received: "HELLO"
+80 ns: Checker: String CORRECT! Expected: "HELLO"
+90 ns: Producer: Sent 'Y' (TLAST=0)
+100 ns: Producer: Sent 'C' (TLAST=0)
+100 ns: Checker: Received 'N' (TLAST=0)
+110 ns: Producer: Sent 'U' (TLAST=1)
+110 ns: Checker: Received 'Y' (TLAST=0)
+120 ns: Producer: Moving to next string: MLCHIP
+120 ns: Checker: Received 'C' (TLAST=0)
+130 ns: Producer: Sent 'M' (TLAST=0)
+130 ns: Checker: Received 'U' (TLAST=1)
+130 ns: Checker: Full string received: "NYCU"
+130 ns: Checker: String CORRECT! Expected: "NYCU"
+140 ns: Producer: Sent 'L' (TLAST=0)
+150 ns: Producer: Sent 'C' (TLAST=0)
+150 ns: Checker: Received 'M' (TLAST=0)
+160 ns: Producer: Sent 'H' (TLAST=0)
+160 ns: Checker: Received 'L' (TLAST=0)
+170 ns: Producer: Sent 'I' (TLAST=0)
+170 ns: Checker: Received 'C' (TLAST=0)
+180 ns: Producer: Sent 'P' (TLAST=1)
+180 ns: Checker: Received 'H' (TLAST=0)
+190 ns: Producer: All strings sent.
+190 ns: Checker: Received 'I' (TLAST=0)
+200 ns: Checker: Received 'P' (TLAST=1)
+200 ns: Checker: Full string received: "MLCHIP"
+200 ns: Checker: String CORRECT! Expected: "MLCHIP"
+200 ns: Checker: All expected strings processed. Congratulations.
+Simulation finished at 1012 ns
