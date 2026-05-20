@@ -16,7 +16,7 @@ Given a simulation time of 1000 ns, implement an AXI-Stream communication pipeli
 ## Input / Output Format
 ### Output
 Simulation log
-```log
+```
 Simulation starting...
 @ 1 ns Asserting reset (ARESETn = 0)
 1 ns: Producer: Resetting...
@@ -29,6 +29,7 @@ Simulation starting...
 50 ns: Producer: Sent 'L' (TLAST=0)
 50 ns: Checker: Received 'H' (TLAST=0)
 60 ns: Producer: Sent 'L' (TLAST=0)
+...
 ```
 
 ## Directory Structure
