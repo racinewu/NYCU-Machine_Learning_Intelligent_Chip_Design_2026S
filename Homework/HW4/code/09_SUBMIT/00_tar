@@ -1,0 +1,72 @@
+#!/bin/bash
+
+########################################################################
+# Color Parameters
+########################################################################
+NO_COLOR='\033[0m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+ORANGE='\033[0;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+LIGHTGRAY='\033[0;37m'
+DARKGRAY='\033[1;30m'
+LIGHTRED='\033[1;31m'
+LIGHTGREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+LIGHTBLUE='\033[1;34m'
+LIGHTPURPLE='\033[1;35m'
+LIGHTCYAN='\033[1;36m'
+WHITE='\033[1;37m'
+
+########################################################################
+# TA Setup Parameters
+########################################################################
+LAB="hw4"
+ID=$(whoami)  # Get current user ID
+ID_DIRECTORY="${LAB}_${ID}"  # Create target directory name
+
+########################################################################
+# (0) Create Directory
+########################################################################
+if [ -d "$ID_DIRECTORY" ]; then
+    #echo -e "${YELLOW}[Info] Directory exists. Removing old directory and creating a new one.${NO_COLOR}"
+    rm -rf "$ID_DIRECTORY"
+fi
+mkdir "$ID_DIRECTORY"
+echo -e "${GREEN}[Info] Directory created: $ID_DIRECTORY${NO_COLOR}"
+
+########################################################################
+# (1) Copy all .h files and rename them
+########################################################################
+for file in ../*.h; do
+    if [ -f "$file" ]; then  # Ensure it's a valid file
+        filename=$(basename "$file" .h)  # Extract filename without extension
+        cp "$file" "$ID_DIRECTORY/${filename}_${ID}.h"
+        echo -e "${CYAN}[Info] Copied: $file -> $ID_DIRECTORY/${filename}_${ID}.h${NO_COLOR}"
+    fi
+done
+
+########################################################################
+# (2) Copy all .cpp files and rename them
+########################################################################
+for file in ../*.cpp; do
+    if [ -f "$file" ]; then
+        filename=$(basename "$file" .cpp)
+        cp "$file" "$ID_DIRECTORY/${filename}_${ID}.cpp"
+        echo -e "${CYAN}[Info] Copied: $file -> $ID_DIRECTORY/${filename}_${ID}.cpp${NO_COLOR}"
+    fi
+done
+
+########################################################################
+# (3) Create tar archive
+########################################################################
+echo -e "${YELLOW}[Info] Creating tar archive: ${ID_DIRECTORY}.tar.gz${NO_COLOR}"
+tar -zcvf "${ID_DIRECTORY}.tar.gz" "$ID_DIRECTORY"
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}[Success] ${ID_DIRECTORY}.tar.gz created successfully.${NO_COLOR}"
+else
+    echo -e "${RED}[Error] Failed to create ${ID_DIRECTORY}.tar.gz.${NO_COLOR}"
+    exit 1
+fi
