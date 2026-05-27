@@ -6,196 +6,174 @@
 #include "systemc.h"
 #include <sstream>
 
-// ============================================================
 // 4x4 Mesh NoC:
-//   R0 -- R1 -- R2 -- R3   (top row, active)
-//   R4 .. R15              (all ports stubbed)
 //
-//   R0 = Controller    R1 = Core1    R2 = Core2    R3 = Core3
-//   Ports: 0=North 1=South 2=East 3=West 4=Local
-// ============================================================
+//  [Ctrl]          <- connected to R0 North port (port 0)
+//    |
+//  R0  R1  R2  R3
+//  R4  R5  R6  R7
+//  R8  R9  R10 R11
+//  R12 R13 R14 R15
+//
+// Controller ID = 16 (virtual node above R0)
+// Core i at Router i LOCAL (port 4), i = 0..15
+// All 16 Cores available for computation.
+//
+// Port map: 0=North 1=South 2=East 3=West 4=Local
 
-// Stub signal pools (large enough for 16 routers * 5 ports)
-sc_signal<sc_lv<34>> sf[80];   // flit stubs (in+out share same signal)
-sc_signal<bool>      sb[320];  // bool stubs (4 per port)
-
-int _sf = 0, _sb = 0;
+sc_signal<sc_lv<34>> sf[80];
+sc_signal<bool>      sb[320];
+int _sf=0, _sb=0;
 
 void stub_port(Router* r, int p) {
-    r->out_flit[p](sf[_sf]);
-    r->in_flit[p] (sf[_sf]);   _sf++;
-    r->out_req[p] (sb[_sb++]);
-    r->in_req[p]  (sb[_sb++]);
-    r->in_ack[p]  (sb[_sb++]);
-    r->out_ack[p] (sb[_sb++]);
+    r->out_flit[p](sf[_sf]); r->in_flit[p](sf[_sf]); _sf++;
+    r->out_req[p](sb[_sb++]);
+    r->in_req[p] (sb[_sb++]);
+    r->in_ack[p] (sb[_sb++]);
+    r->out_ack[p](sb[_sb++]);
 }
 
 int sc_main(int argc, char* argv[])
 {
     sc_signal<bool> clk, rst;
-
     Clock m_clock("m_clock", 10);
     Reset m_reset("m_reset", 15);
-    m_clock(clk);
-    m_reset(rst);
+    m_clock(clk); m_reset(rst);
 
-    // ROM signals
     sc_signal<int>   layer_id;
     sc_signal<bool>  layer_id_type, layer_id_valid;
     sc_signal<float> rom_data;
     sc_signal<bool>  rom_data_valid;
-
     ROM m_rom("m_rom");
     m_rom.clk(clk); m_rom.rst(rst);
-    m_rom.layer_id(layer_id);
-    m_rom.layer_id_type(layer_id_type);
+    m_rom.layer_id(layer_id); m_rom.layer_id_type(layer_id_type);
     m_rom.layer_id_valid(layer_id_valid);
-    m_rom.data(rom_data);
-    m_rom.data_valid(rom_data_valid);
+    m_rom.data(rom_data); m_rom.data_valid(rom_data_valid);
 
-    // Routers
-    Router* routers[16];
-    for (int i = 0; i < 16; i++) {
-        std::ostringstream oss; oss << "router_" << i;
-        routers[i] = new Router(oss.str().c_str());
-        routers[i]->init(i);
-        routers[i]->clk(clk);
-        routers[i]->rst(rst);
+    // 16 Routers
+    Router* R[16];
+    for (int i=0; i<16; i++) {
+        std::ostringstream s; s << "router_" << i;
+        R[i] = new Router(s.str().c_str());
+        R[i]->init(i); R[i]->clk(clk); R[i]->rst(rst);
     }
 
-    // Cores 1..3
-    Core* cores[4];
-    for (int i = 1; i <= 3; i++) {
-        std::ostringstream oss; oss << "core_" << i;
-        cores[i] = new Core(oss.str().c_str());
-        cores[i]->init(i, "./data");
-        cores[i]->clk(clk);
-        cores[i]->rst(rst);
+    // 16 Compute Cores (Core 0-15, each at Router i LOCAL)
+    Core* C[16];
+    for (int i=0; i<16; i++) {
+        std::ostringstream s; s << "core_" << i;
+        C[i] = new Core(s.str().c_str());
+        C[i]->init(i, "./data");
+        C[i]->clk(clk); C[i]->rst(rst);
     }
 
-    // Controller
-    Controller m_ctrl("controller");
-    m_ctrl.clk(clk); m_ctrl.rst(rst);
-    m_ctrl.layer_id(layer_id);
-    m_ctrl.layer_id_type(layer_id_type);
-    m_ctrl.layer_id_valid(layer_id_valid);
-    m_ctrl.data(rom_data);
-    m_ctrl.data_valid(rom_data_valid);
+    // Controller (ID=16, connected to R0 North port)
+    Controller ctrl("controller");
+    ctrl.clk(clk); ctrl.rst(rst);
+    ctrl.layer_id(layer_id); ctrl.layer_id_type(layer_id_type);
+    ctrl.layer_id_valid(layer_id_valid);
+    ctrl.data(rom_data); ctrl.data_valid(rom_data_valid);
 
     // -------------------------------------------------------
-    // Inter-router East/West links (R0-R1-R2-R3)
+    // Inter-router East/West links
     // -------------------------------------------------------
-    sc_signal<sc_lv<34>> r01f, r10f, r12f, r21f, r23f, r32f;
-    sc_signal<bool>      r01req, r01ack, r10req, r10ack;
-    sc_signal<bool>      r12req, r12ack, r21req, r21ack;
-    sc_signal<bool>      r23req, r23ack, r32req, r32ack;
+    sc_signal<sc_lv<34>> r01f,r10f, r12f,r21f, r23f,r32f;
+    sc_signal<bool> r01q,r01a, r10q,r10a, r12q,r12a, r21q,r21a, r23q,r23a, r32q,r32a;
+    sc_signal<sc_lv<34>> r45f,r54f, r56f,r65f, r67f,r76f;
+    sc_signal<bool> r45q,r45a, r54q,r54a, r56q,r56a, r65q,r65a, r67q,r67a, r76q,r76a;
+    sc_signal<sc_lv<34>> r89f,r98f, r9af,ra9f, rabf,rbaf;
+    sc_signal<bool> r89q,r89a, r98q,r98a, r9aq,r9aa, ra9q,ra9a, rabq,raba, rbaq,rbaa;
+    sc_signal<sc_lv<34>> rcdf,rdcf, rdef,redf, reff,rfef;
+    sc_signal<bool> rcdq,rcda, rdcq,rdca, rdeq,rdea, redq,reda, refq,refa, rfeq,rfea;
 
-    // Controller <-> R0 LOCAL
-    sc_signal<sc_lv<34>> ctrl_tx_f, ctrl_rx_f;
-    sc_signal<bool>      ctrl_tx_req, ctrl_tx_ack, ctrl_rx_req, ctrl_rx_ack;
+    // Inter-router North/South links
+    sc_signal<sc_lv<34>> r04f,r40f, r48f,r84f, r8cf,rc8f;
+    sc_signal<bool> r04q,r04a, r40q,r40a, r48q,r48a, r84q,r84a, r8cq,r8ca, rc8q,rc8a;
+    sc_signal<sc_lv<34>> r15f,r51f, r59f,r95f, r9df,rd9f;
+    sc_signal<bool> r15q,r15a, r51q,r51a, r59q,r59a, r95q,r95a, r9dq,r9da, rd9q,rd9a;
+    sc_signal<sc_lv<34>> r26f,r62f, r6af,ra6f, raef,reaF;
+    sc_signal<bool> r26q,r26a, r62q,r62a, r6aq,r6aa, ra6q,ra6a, raeq,raea, reaq,reaA;
+    sc_signal<sc_lv<34>> r37f,r73f, r7bf,rb7f, rbff,rfbf;
+    sc_signal<bool> r37q,r37a, r73q,r73a, r7bq,r7ba, rb7q,rb7a, rbfq,rbfa, rfbq,rfba;
 
-    // Core1 <-> R1 LOCAL
-    sc_signal<sc_lv<34>> c1_tx_f, c1_rx_f;
-    sc_signal<bool>      c1_tx_req, c1_tx_ack, c1_rx_req, c1_rx_ack;
+    // Controller <-> R0 North port
+    sc_signal<sc_lv<34>> ctf, crf;
+    sc_signal<bool>      ctq, cta, crq, cra;
 
-    // Core2 <-> R2 LOCAL
-    sc_signal<sc_lv<34>> c2_tx_f, c2_rx_f;
-    sc_signal<bool>      c2_tx_req, c2_tx_ack, c2_rx_req, c2_rx_ack;
+    // Core LOCAL signals
+    sc_signal<sc_lv<34>> lf[16], lrf[16];
+    sc_signal<bool>      lq[16], la[16], lrq[16], lra[16];
 
-    // Core3 <-> R3 LOCAL
-    sc_signal<sc_lv<34>> c3_tx_f, c3_rx_f;
-    sc_signal<bool>      c3_tx_req, c3_tx_ack, c3_rx_req, c3_rx_ack;
+#define WIRE_EW(A,B, ABf,BAf, ABq,ABa, BAq,BAa) \
+    R[A]->out_flit[2](ABf); R[A]->out_req[2](ABq); R[A]->in_ack[2](ABa); \
+    R[A]->in_flit[2](BAf);  R[A]->in_req[2](BAq);  R[A]->out_ack[2](BAa); \
+    R[B]->out_flit[3](BAf); R[B]->out_req[3](BAq); R[B]->in_ack[3](BAa); \
+    R[B]->in_flit[3](ABf);  R[B]->in_req[3](ABq);  R[B]->out_ack[3](ABa);
 
-    // -------------------------------------------------------
-    // Wire Router 0  (N=stub S=stub E=R1 W=stub L=Ctrl)
-    // -------------------------------------------------------
-    stub_port(routers[0], 0);  // North
-    stub_port(routers[0], 1);  // South
-    // East -> R1 West
-    routers[0]->out_flit[2](r01f);    routers[0]->out_req[2](r01req); routers[0]->in_ack[2](r01ack);
-    routers[0]->in_flit[2] (r10f);    routers[0]->in_req[2](r10req);  routers[0]->out_ack[2](r10ack);
-    stub_port(routers[0], 3);  // West
-    // Local = Controller
-    routers[0]->out_flit[4](ctrl_rx_f);  routers[0]->out_req[4](ctrl_rx_req); routers[0]->in_ack[4](ctrl_rx_ack);
-    routers[0]->in_flit[4] (ctrl_tx_f);  routers[0]->in_req[4](ctrl_tx_req);  routers[0]->out_ack[4](ctrl_tx_ack);
+#define WIRE_NS(A,B, ABf,BAf, ABq,ABa, BAq,BAa) \
+    R[A]->out_flit[1](ABf); R[A]->out_req[1](ABq); R[A]->in_ack[1](ABa); \
+    R[A]->in_flit[1](BAf);  R[A]->in_req[1](BAq);  R[A]->out_ack[1](BAa); \
+    R[B]->out_flit[0](BAf); R[B]->out_req[0](BAq); R[B]->in_ack[0](BAa); \
+    R[B]->in_flit[0](ABf);  R[B]->in_req[0](ABq);  R[B]->out_ack[0](ABa);
 
-    // -------------------------------------------------------
-    // Wire Router 1  (N=stub S=stub E=R2 W=R0 L=Core1)
-    // -------------------------------------------------------
-    stub_port(routers[1], 0);  // North
-    stub_port(routers[1], 1);  // South
-    // East -> R2 West
-    routers[1]->out_flit[2](r12f);    routers[1]->out_req[2](r12req); routers[1]->in_ack[2](r12ack);
-    routers[1]->in_flit[2] (r21f);    routers[1]->in_req[2](r21req);  routers[1]->out_ack[2](r21ack);
-    // West = R0 East
-    routers[1]->out_flit[3](r10f);    routers[1]->out_req[3](r10req); routers[1]->in_ack[3](r10ack);
-    routers[1]->in_flit[3] (r01f);    routers[1]->in_req[3](r01req);  routers[1]->out_ack[3](r01ack);
-    // Local = Core1
-    routers[1]->out_flit[4](c1_rx_f); routers[1]->out_req[4](c1_rx_req); routers[1]->in_ack[4](c1_rx_ack);
-    routers[1]->in_flit[4] (c1_tx_f); routers[1]->in_req[4](c1_tx_req);  routers[1]->out_ack[4](c1_tx_ack);
+    // Row links
+    WIRE_EW(0,1,  r01f,r10f, r01q,r01a, r10q,r10a)
+    WIRE_EW(1,2,  r12f,r21f, r12q,r12a, r21q,r21a)
+    WIRE_EW(2,3,  r23f,r32f, r23q,r23a, r32q,r32a)
+    WIRE_EW(4,5,  r45f,r54f, r45q,r45a, r54q,r54a)
+    WIRE_EW(5,6,  r56f,r65f, r56q,r56a, r65q,r65a)
+    WIRE_EW(6,7,  r67f,r76f, r67q,r67a, r76q,r76a)
+    WIRE_EW(8,9,  r89f,r98f, r89q,r89a, r98q,r98a)
+    WIRE_EW(9,10, r9af,ra9f, r9aq,r9aa, ra9q,ra9a)
+    WIRE_EW(10,11,rabf,rbaf, rabq,raba, rbaq,rbaa)
+    WIRE_EW(12,13,rcdf,rdcf, rcdq,rcda, rdcq,rdca)
+    WIRE_EW(13,14,rdef,redf, rdeq,rdea, redq,reda)
+    WIRE_EW(14,15,reff,rfef, refq,refa, rfeq,rfea)
 
-    // -------------------------------------------------------
-    // Wire Router 2  (N=stub S=stub E=R3 W=R1 L=Core2)
-    // -------------------------------------------------------
-    stub_port(routers[2], 0);  // North
-    stub_port(routers[2], 1);  // South
-    // East -> R3 West
-    routers[2]->out_flit[2](r23f);    routers[2]->out_req[2](r23req); routers[2]->in_ack[2](r23ack);
-    routers[2]->in_flit[2] (r32f);    routers[2]->in_req[2](r32req);  routers[2]->out_ack[2](r32ack);
-    // West = R1 East
-    routers[2]->out_flit[3](r21f);    routers[2]->out_req[3](r21req); routers[2]->in_ack[3](r21ack);
-    routers[2]->in_flit[3] (r12f);    routers[2]->in_req[3](r12req);  routers[2]->out_ack[3](r12ack);
-    // Local = Core2
-    routers[2]->out_flit[4](c2_rx_f); routers[2]->out_req[4](c2_rx_req); routers[2]->in_ack[4](c2_rx_ack);
-    routers[2]->in_flit[4] (c2_tx_f); routers[2]->in_req[4](c2_tx_req);  routers[2]->out_ack[4](c2_tx_ack);
+    // Column links
+    WIRE_NS(0,4,  r04f,r40f, r04q,r04a, r40q,r40a)
+    WIRE_NS(4,8,  r48f,r84f, r48q,r48a, r84q,r84a)
+    WIRE_NS(8,12, r8cf,rc8f, r8cq,r8ca, rc8q,rc8a)
+    WIRE_NS(1,5,  r15f,r51f, r15q,r15a, r51q,r51a)
+    WIRE_NS(5,9,  r59f,r95f, r59q,r59a, r95q,r95a)
+    WIRE_NS(9,13, r9df,rd9f, r9dq,r9da, rd9q,rd9a)
+    WIRE_NS(2,6,  r26f,r62f, r26q,r26a, r62q,r62a)
+    WIRE_NS(6,10, r6af,ra6f, r6aq,r6aa, ra6q,ra6a)
+    WIRE_NS(10,14,raef,reaF, raeq,raea, reaq,reaA)
+    WIRE_NS(3,7,  r37f,r73f, r37q,r37a, r73q,r73a)
+    WIRE_NS(7,11, r7bf,rb7f, r7bq,r7ba, rb7q,rb7a)
+    WIRE_NS(11,15,rbff,rfbf, rbfq,rbfa, rfbq,rfba)
 
-    // -------------------------------------------------------
-    // Wire Router 3  (N=stub S=stub E=stub W=R2 L=Core3)
-    // -------------------------------------------------------
-    stub_port(routers[3], 0);  // North
-    stub_port(routers[3], 1);  // South
-    stub_port(routers[3], 2);  // East
-    // West = R2 East
-    routers[3]->out_flit[3](r32f);    routers[3]->out_req[3](r32req); routers[3]->in_ack[3](r32ack);
-    routers[3]->in_flit[3] (r23f);    routers[3]->in_req[3](r23req);  routers[3]->out_ack[3](r23ack);
-    // Local = Core3
-    routers[3]->out_flit[4](c3_rx_f); routers[3]->out_req[4](c3_rx_req); routers[3]->in_ack[4](c3_rx_ack);
-    routers[3]->in_flit[4] (c3_tx_f); routers[3]->in_req[4](c3_tx_req);  routers[3]->out_ack[4](c3_tx_ack);
+    // Boundary stubs (East of col3, West of col0, South of row3)
+    // R0 North is used by Controller, so NOT stubbed
+    stub_port(R[0],  3); stub_port(R[4],  3);
+    stub_port(R[8],  3); stub_port(R[12], 3);
+    stub_port(R[3],  2); stub_port(R[7],  2);
+    stub_port(R[11], 2); stub_port(R[15], 2);
+    // Row 0 North: R0 used by Controller, R1-R3 stubbed
+    stub_port(R[1],  0); stub_port(R[2],  0); stub_port(R[3],  0);
+    // Row 3 South: all stubbed
+    stub_port(R[12], 1); stub_port(R[13], 1);
+    stub_port(R[14], 1); stub_port(R[15], 1);
 
-    // -------------------------------------------------------
-    // Stub all ports of routers 4..15
-    // -------------------------------------------------------
-    for (int r = 4; r < 16; r++)
-        for (int p = 0; p < 5; p++)
-            stub_port(routers[r], p);
+    // Controller <-> R0 North port (port 0)
+    // Controller TX -> R0 in_flit[0], Controller RX <- R0 out_flit[0]
+    R[0]->in_flit[0] (ctf);  R[0]->in_req[0] (ctq);  R[0]->out_ack[0](cta);
+    R[0]->out_flit[0](crf);  R[0]->out_req[0](crq);  R[0]->in_ack[0] (cra);
+    ctrl.flit_tx(ctf); ctrl.req_tx(ctq); ctrl.ack_tx(cta);
+    ctrl.flit_rx(crf); ctrl.req_rx(crq); ctrl.ack_rx(cra);
 
-    // -------------------------------------------------------
-    // Connect Controller
-    // -------------------------------------------------------
-    m_ctrl.flit_tx(ctrl_tx_f);   m_ctrl.req_tx(ctrl_tx_req); m_ctrl.ack_tx(ctrl_tx_ack);
-    m_ctrl.flit_rx(ctrl_rx_f);   m_ctrl.req_rx(ctrl_rx_req); m_ctrl.ack_rx(ctrl_rx_ack);
-
-    // -------------------------------------------------------
-    // Connect Core1
-    // -------------------------------------------------------
-    cores[1]->flit_tx(c1_tx_f);  cores[1]->req_tx(c1_tx_req); cores[1]->ack_tx(c1_tx_ack);
-    cores[1]->flit_rx(c1_rx_f);  cores[1]->req_rx(c1_rx_req); cores[1]->ack_rx(c1_rx_ack);
-
-    // -------------------------------------------------------
-    // Connect Core2
-    // -------------------------------------------------------
-    cores[2]->flit_tx(c2_tx_f);  cores[2]->req_tx(c2_tx_req); cores[2]->ack_tx(c2_tx_ack);
-    cores[2]->flit_rx(c2_rx_f);  cores[2]->req_rx(c2_rx_req); cores[2]->ack_rx(c2_rx_ack);
-
-    // -------------------------------------------------------
-    // Connect Core3
-    // -------------------------------------------------------
-    cores[3]->flit_tx(c3_tx_f);  cores[3]->req_tx(c3_tx_req); cores[3]->ack_tx(c3_tx_ack);
-    cores[3]->flit_rx(c3_rx_f);  cores[3]->req_rx(c3_rx_req); cores[3]->ack_rx(c3_rx_ack);
+    // Core 0-15 <-> Router 0-15 LOCAL (port 4)
+    for (int i=0; i<16; i++) {
+        R[i]->out_flit[4](lrf[i]); R[i]->out_req[4](lrq[i]); R[i]->in_ack[4](lra[i]);
+        R[i]->in_flit[4] (lf[i]);  R[i]->in_req[4] (lq[i]);  R[i]->out_ack[4](la[i]);
+        C[i]->flit_tx(lf[i]);  C[i]->req_tx(lq[i]);  C[i]->ack_tx(la[i]);
+        C[i]->flit_rx(lrf[i]); C[i]->req_rx(lrq[i]); C[i]->ack_rx(lra[i]);
+    }
 
     sc_start();
 
-    for (int i = 0; i < 16; i++) delete routers[i];
-    for (int i = 1; i <= 3;  i++) delete cores[i];
+    for (int i=0; i<16; i++) delete R[i];
+    for (int i=0; i<16; i++) delete C[i];
     return 0;
 }

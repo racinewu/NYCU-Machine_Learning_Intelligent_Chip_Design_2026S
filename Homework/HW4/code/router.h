@@ -6,6 +6,10 @@
 
 using namespace std;
 
+// Controller is assigned virtual ID 16, connected to R0's North port.
+// Any router routes dest=16 toward R0 via XY, then R0 exits North.
+#define CTRL_ID 16
+
 SC_MODULE( Router ) {
     sc_in  < bool >  rst;
     sc_in  < bool >  clk;
@@ -31,7 +35,16 @@ SC_MODULE( Router ) {
 
     void init(int id) { router_id = id; }
 
+    // XY routing: dest=CTRL_ID routes to North port at R0.
+    // For any other router, XY-route toward (0,0) first.
     int get_xy_route(int dest_id) {
+        if (dest_id == CTRL_ID) {
+            // Route toward R0, then exit North
+            int cx = router_id % 4, cy = router_id / 4;
+            if (cx > 0) return 3; // West toward col 0
+            if (cy > 0) return 0; // North toward row 0
+            return 0;             // At R0: exit North to Controller
+        }
         int cx = router_id % 4, cy = router_id / 4;
         int dx = dest_id   % 4, dy = dest_id   / 4;
         if (dx > cx) return 2; // East
@@ -52,7 +65,6 @@ SC_MODULE( Router ) {
             wait();
         }
     }
-
     void sync_in_0() { sync_in_logic(0); }
     void sync_in_1() { sync_in_logic(1); }
     void sync_in_2() { sync_in_logic(2); }
@@ -62,7 +74,10 @@ SC_MODULE( Router ) {
     void eb_thread() {
         while (true) {
             for (int i=0; i<5; i++)
-                while (!sync_in_q[i].empty()) { eb[i].push(sync_in_q[i].front()); sync_in_q[i].pop(); }
+                while (!sync_in_q[i].empty()) {
+                    eb[i].push(sync_in_q[i].front());
+                    sync_in_q[i].pop();
+                }
             wait();
         }
     }
@@ -117,7 +132,6 @@ SC_MODULE( Router ) {
             wait();
         }
     }
-
     void sync_out_0() { sync_out_logic(0); }
     void sync_out_1() { sync_out_logic(1); }
     void sync_out_2() { sync_out_logic(2); }
@@ -127,7 +141,10 @@ SC_MODULE( Router ) {
     void xb_drain_thread() {
         while (true) {
             for (int p=0; p<5; p++)
-                while (!xb_q[p].empty()) { out_q[p].push(xb_q[p].front()); xb_q[p].pop(); }
+                while (!xb_q[p].empty()) {
+                    out_q[p].push(xb_q[p].front());
+                    xb_q[p].pop();
+                }
             wait();
         }
     }

@@ -2,252 +2,463 @@
 #define CORE_H
 
 #include "systemc.h"
-#include "pe.h"
+#include "noc_io.h"
 #include "layers.h"
 #include <vector>
 #include <queue>
+#include <map>
 #include <string>
 using namespace std;
 
 // ============================================================
-// Core ID assignment:
-//   0 = Controller (router 0 LOCAL)
-//   1 = ModuleA PE (router 1 LOCAL) : Conv1 + Pool1
-//   2 = ModuleB PE (router 2 LOCAL) : Conv2..Conv5 + Pool5
-//   3 = ModuleC PE (router 3 LOCAL) : FC6, FC7, FC8, Softmax
+// Core assignment (Controller at Router 0, Cores 1-15 at Routers 1-15):
 //
-// Packet flow:
-//   Controller --[image floats]--> Core1
-//   Core1       --[pool1 output]--> Core2
-//   Core2       --[flat 9216]----> Core3
-//   Core3       --[fc8+softmax]---> Controller
+//   Core 1-4  : Conv1 (16 out-ch each) + Conv2-5 + FC6 + FC7
+//   Core 5-8  :                          Conv2-5 + FC6 + FC7
+//   Core 9    : FC8 + Softmax
+//   Core 10-15: idle (all ports stubbed in main.cpp)
+//
+// Conv2-5 uses 8 cores (1-8), each handles Cout/8 channels:
+//   Conv2: 192/8 = 24 ch/core
+//   Conv3: 384/8 = 48 ch/core
+//   Conv4: 256/8 = 32 ch/core
+//   Conv5: 256/8 = 32 ch/core
+//
+// FC6-7 uses 8 cores (1-8), Weight Stationary:
+//   512 neurons per core, weights preloaded via NoC from ROM
+//
+// All weights arrive via NoC from Controller (which reads ROM).
+// No direct file I/O in Core.
 // ============================================================
 
-SC_MODULE( Core ) {
-    sc_in  < bool >  rst;
-    sc_in  < bool >  clk;
-
-    sc_in  < sc_lv<34> > flit_rx;
-    sc_in  < bool >      req_rx;
-    sc_out < bool >      ack_rx;
-
-    sc_out < sc_lv<34> > flit_tx;
-    sc_out < bool >      req_tx;
-    sc_in  < bool >      ack_tx;
+SC_MODULE(Core) {
+    sc_in  <bool>       rst;
+    sc_in  <bool>       clk;
+    sc_in  <sc_lv<34>>  flit_rx;
+    sc_in  <bool>       req_rx;
+    sc_out <bool>       ack_rx;
+    sc_out <sc_lv<34>>  flit_tx;
+    sc_out <bool>       req_tx;
+    sc_in  <bool>       ack_tx;
 
     int core_id;
-    string data_dir;
 
-    // --- AlexNet layer impls ---
-    // Core 1: ModuleA
-    InputLayerImpl   input_layer;
-    ConvLayerImpl    conv1;
-    MaxPoolLayerImpl pool1;
+    // FC weight buffers (Weight Stationary, loaded once via NoC)
+    vector<float> fc6_w, fc6_b;
+    vector<float> fc7_w, fc7_b;
+    vector<float> fc8_w, fc8_b;  // core 15 only
 
-    // Core 2: ModuleB
-    ConvLayerImpl    conv2, conv3, conv4, conv5;
-    MaxPoolLayerImpl pool2, pool5;
+    // NI TX queue
+    queue<Packet*> tx_queue;
+    sc_event       tx_ready;
 
-    // Core 3: ModuleC
-    FCLayerImpl      fc6, fc7, fc8;
-    SoftmaxLayerImpl softmax_layer;
-
-    // --- TX queue ---
-    std::queue<Packet*> tx_queue;
-
-    void init(int id, const string& dir) {
-        core_id  = id;
-        data_dir = dir;
-        setup_layers();
+    void init(int id, const string& dir = "") {
+        core_id = id;
+        (void)dir;
     }
 
-    void setup_layers() {
-        if (core_id == 1) {
-            conv1.in_channels=3; conv1.out_channels=64; conv1.kernel_size=11;
-            conv1.stride=4; conv1.padding=0; conv1.in_h=227; conv1.in_w=227;
-            conv1.load_weights(data_dir+"/conv1_weight.txt", data_dir+"/conv1_bias.txt");
-            pool1.channels=64; pool1.pool_size=3; pool1.stride=2; pool1.in_h=55; pool1.in_w=55;
-        } else if (core_id == 2) {
-            conv2.in_channels=64;  conv2.out_channels=192; conv2.kernel_size=5;
-            conv2.stride=1; conv2.padding=2; conv2.in_h=27; conv2.in_w=27;
-            conv2.load_weights(data_dir+"/conv2_weight.txt", data_dir+"/conv2_bias.txt");
-            pool2.channels=192; pool2.pool_size=3; pool2.stride=2; pool2.in_h=27; pool2.in_w=27;
+    // ============================================================
+    // PE compute functions (no file I/O)
+    // ============================================================
 
-            conv3.in_channels=192; conv3.out_channels=384; conv3.kernel_size=3;
-            conv3.stride=1; conv3.padding=1; conv3.in_h=13; conv3.in_w=13;
-            conv3.load_weights(data_dir+"/conv3_weight.txt", data_dir+"/conv3_bias.txt");
+    // Conv1: receive [image(3*224*224) | weight(16*3*11*11) | bias(16)]
+    // Output: [16][27][27] after pool1
+    void do_conv1(const vector<float>& payload, vector<float>& out) {
+        int img_sz = 3*224*224, w_sz = 16*3*11*11;
+        const float* img = &payload[0];
+        const float* W   = &payload[img_sz];
+        const float* B   = &payload[img_sz + w_sz];
 
-            conv4.in_channels=384; conv4.out_channels=256; conv4.kernel_size=3;
-            conv4.stride=1; conv4.padding=1; conv4.in_h=13; conv4.in_w=13;
-            conv4.load_weights(data_dir+"/conv4_weight.txt", data_dir+"/conv4_bias.txt");
+        int Cin=3, Cout=16, K=11, stride=4, Hin=227, Win=227;
+        int Hout=55, Wout=55;
 
-            conv5.in_channels=256; conv5.out_channels=256; conv5.kernel_size=3;
-            conv5.stride=1; conv5.padding=1; conv5.in_h=13; conv5.in_w=13;
-            conv5.load_weights(data_dir+"/conv5_weight.txt", data_dir+"/conv5_bias.txt");
+        // Build padded 227x227 from 224x224
+        vector<vector<vector<float>>> pad(Cin,
+            vector<vector<float>>(Hin, vector<float>(Win, 0.f)));
+        for (int c=0;c<Cin;c++)
+            for (int r=0;r<224;r++)
+                for (int col=0;col<224;col++)
+                    pad[c][r+2][col+2] = img[c*224*224+r*224+col];
 
-            pool5.channels=256; pool5.pool_size=3; pool5.stride=2; pool5.in_h=13; pool5.in_w=13;
-        } else if (core_id == 3) {
-            fc6.in_features=9216; fc6.out_features=4096; fc6.use_relu=true;
-            fc6.load_weights(data_dir+"/fc6_weight.txt", data_dir+"/fc6_bias.txt");
-            fc7.in_features=4096; fc7.out_features=4096; fc7.use_relu=true;
-            fc7.load_weights(data_dir+"/fc7_weight.txt", data_dir+"/fc7_bias.txt");
-            fc8.in_features=4096; fc8.out_features=1000; fc8.use_relu=false;
-            fc8.load_weights(data_dir+"/fc8_weight.txt", data_dir+"/fc8_bias.txt");
-            softmax_layer.size = 1000;
+        // Conv + ReLU
+        vector<vector<vector<float>>> cv(Cout,
+            vector<vector<float>>(Hout, vector<float>(Wout, 0.f)));
+        int k2=K*K;
+        for (int oc=0;oc<Cout;oc++)
+            for (int i=0;i<Hout;i++)
+                for (int j=0;j<Wout;j++) {
+                    float s=B[oc];
+                    for (int ic=0;ic<Cin;ic++) {
+                        int wb=(oc*Cin+ic)*k2;
+                        for (int kh=0;kh<K;kh++)
+                            for (int kw=0;kw<K;kw++)
+                                s+=pad[ic][i*stride+kh][j*stride+kw]*W[wb+kh*K+kw];
+                    }
+                    cv[oc][i][j]=(s>0.f)?s:0.f;
+                }
+
+        // MaxPool 3x3 stride 2: 55->27
+        out.clear(); out.reserve(Cout*27*27);
+        for (int oc=0;oc<Cout;oc++)
+            for (int i=0;i<27;i++)
+                for (int j=0;j<27;j++) {
+                    float mx=-1e30f;
+                    for (int kh=0;kh<3;kh++)
+                        for (int kw=0;kw<3;kw++)
+                            mx=max(mx, cv[oc][i*2+kh][j*2+kw]);
+                    out.push_back(mx);
+                }
+    }
+
+    // Conv2-5: output-channel stationary
+    // payload = [FM_flat | weight(n_ch*Cin*K*K) | bias(n_ch)]
+    // n_ch = number of output channels this core handles
+    void do_conv(int layer, const vector<float>& payload,
+                 int n_ch, vector<float>& out) {
+        int Cin, K, Hin, Win, pad, stride;
+        if      (layer==2){ Cin=64;  K=5; Hin=27; Win=27; pad=2; stride=1; }
+        else if (layer==3){ Cin=192; K=3; Hin=13; Win=13; pad=1; stride=1; }
+        else if (layer==4){ Cin=384; K=3; Hin=13; Win=13; pad=1; stride=1; }
+        else               { Cin=256; K=3; Hin=13; Win=13; pad=1; stride=1; }
+
+        int fm_sz = Cin*Hin*Win;
+        int kf    = Cin*K*K;
+        const float* fm_raw = &payload[0];
+        const float* W      = &payload[fm_sz];
+        const float* B      = &payload[fm_sz + n_ch*kf];
+
+        int Hout=(Hin+2*pad-K)/stride+1;
+        int Wout=(Win+2*pad-K)/stride+1;
+        int k2=K*K;
+
+        // Build padded input
+        int ph=Hin+2*pad, pw=Win+2*pad;
+        vector<vector<vector<float>>> padded(Cin,
+            vector<vector<float>>(ph, vector<float>(pw,0.f)));
+        for (int c=0;c<Cin;c++)
+            for (int r=0;r<Hin;r++)
+                for (int col=0;col<Win;col++)
+                    padded[c][r+pad][col+pad] = fm_raw[c*Hin*Win+r*Win+col];
+
+        // Conv + ReLU for n_ch output channels
+        vector<vector<vector<float>>> cv(n_ch,
+            vector<vector<float>>(Hout, vector<float>(Wout,0.f)));
+        for (int oc=0;oc<n_ch;oc++)
+            for (int i=0;i<Hout;i++)
+                for (int j=0;j<Wout;j++) {
+                    float s=B[oc];
+                    for (int ic=0;ic<Cin;ic++) {
+                        int wb=(oc*Cin+ic)*k2;
+                        for (int kh=0;kh<K;kh++)
+                            for (int kw=0;kw<K;kw++)
+                                s+=padded[ic][i*stride+kh][j*stride+kw]*W[wb+kh*K+kw];
+                    }
+                    cv[oc][i][j]=(s>0.f)?s:0.f;
+                }
+
+        // MaxPool if layer 2 (27->13) or 5 (13->6)
+        if (layer==2) {
+            out.clear(); out.reserve(n_ch*13*13);
+            for (int oc=0;oc<n_ch;oc++)
+                for (int i=0;i<13;i++)
+                    for (int j=0;j<13;j++) {
+                        float mx=-1e30f;
+                        for (int kh=0;kh<3;kh++)
+                            for (int kw=0;kw<3;kw++)
+                                mx=max(mx,cv[oc][i*2+kh][j*2+kw]);
+                        out.push_back(mx);
+                    }
+        } else if (layer==5) {
+            out.clear(); out.reserve(n_ch*6*6);
+            for (int oc=0;oc<n_ch;oc++)
+                for (int i=0;i<6;i++)
+                    for (int j=0;j<6;j++) {
+                        float mx=-1e30f;
+                        for (int kh=0;kh<3;kh++)
+                            for (int kw=0;kw<3;kw++)
+                                mx=max(mx,cv[oc][i*2+kh][j*2+kw]);
+                        out.push_back(mx);
+                    }
+        } else {
+            // layer 3,4: no pool
+            out.clear(); out.reserve(n_ch*13*13);
+            for (int oc=0;oc<n_ch;oc++)
+                for (int i=0;i<Hout;i++)
+                    for (int j=0;j<Wout;j++)
+                        out.push_back(cv[oc][i][j]);
         }
     }
 
-    // --- Send a flit using 4-phase handshake ---
-    void send_flit(sc_lv<34> f) {
-        req_tx.write(1);
-        flit_tx.write(f);
-        while (ack_tx.read() == 0) wait();
-        req_tx.write(0);
-        while (ack_tx.read() == 1) wait();
-    }
+    // Compute ONE output channel given separate FM and weight+bias vectors.
+    // W = [Cin*K*K floats], bias = 1 float (last element of wb was stripped by caller)
+    vector<float> do_conv_one_ch(int layer,
+                                  const vector<float>& fm,
+                                  const vector<float>& W,
+                                  float bias) {
+        int Cin, K, Hin, Win, pad, stride;
+        if      (layer==2){ Cin=64;  K=5; Hin=27; Win=27; pad=2; stride=1; }
+        else if (layer==3){ Cin=192; K=3; Hin=13; Win=13; pad=1; stride=1; }
+        else if (layer==4){ Cin=384; K=3; Hin=13; Win=13; pad=1; stride=1; }
+        else               { Cin=256; K=3; Hin=13; Win=13; pad=1; stride=1; }
 
-    void send_packet(Packet* p) {
-        // Header
-        sc_lv<34> h;
-        h.range(33,32) = 2;
-        h.range(31,16) = p->dest_id;
-        h.range(15, 0) = p->source_id;
-        send_flit(h);
-        // Body/Tail
-        for (size_t i=0; i<p->datas.size(); i++) {
-            sc_lv<34> f;
-            f.range(33,32) = (i == p->datas.size()-1) ? 1 : 0;
-            union { float fv; unsigned int iv; } cv;
-            cv.fv = p->datas[i];
-            f.range(31,0) = cv.iv;
-            send_flit(f);
+        int Hout=(Hin+2*pad-K)/stride+1;
+        int Wout=(Win+2*pad-K)/stride+1;
+        int k2=K*K;
+
+        int ph=Hin+2*pad, pw=Win+2*pad;
+        vector<vector<vector<float>>> padded(Cin,
+            vector<vector<float>>(ph,vector<float>(pw,0.f)));
+        for (int c=0;c<Cin;c++)
+            for (int r=0;r<Hin;r++)
+                for (int col=0;col<Win;col++)
+                    padded[c][r+pad][col+pad]=fm[c*Hin*Win+r*Win+col];
+
+        vector<float> out_ch(Hout*Wout);
+        for (int i=0;i<Hout;i++)
+            for (int j=0;j<Wout;j++) {
+                float s=bias;
+                for (int ic=0;ic<Cin;ic++) {
+                    const float* Wic=&W[ic*k2];
+                    for (int kh=0;kh<K;kh++)
+                        for (int kw=0;kw<K;kw++)
+                            s+=padded[ic][i*stride+kh][j*stride+kw]*Wic[kh*K+kw];
+                }
+                out_ch[i*Wout+j]=(s>0.f)?s:0.f;
+            }
+
+        // Pool if needed
+        if (layer==2) {
+            vector<float> p(13*13);
+            for (int i=0;i<13;i++) for (int j=0;j<13;j++) {
+                float mx=-1e30f;
+                for (int kh=0;kh<3;kh++) for (int kw=0;kw<3;kw++)
+                    mx=max(mx,out_ch[(i*2+kh)*Wout+(j*2+kw)]);
+                p[i*13+j]=mx;
+            }
+            return p;
+        } else if (layer==5) {
+            vector<float> p(6*6);
+            for (int i=0;i<6;i++) for (int j=0;j<6;j++) {
+                float mx=-1e30f;
+                for (int kh=0;kh<3;kh++) for (int kw=0;kw<3;kw++)
+                    mx=max(mx,out_ch[(i*2+kh)*Wout+(j*2+kw)]);
+                p[i*6+j]=mx;
+            }
+            return p;
         }
+        return out_ch; // layer 3,4: 13*13
+
     }
 
+    vector<float> do_fc(const vector<float>& w, const vector<float>& b,
+                        const vector<float>& in, int Nout, bool relu) {
+        int Nin=in.size();
+        vector<float> out(Nout);
+        for (int o=0;o<Nout;o++) {
+            float s=b[o];
+            for (int i=0;i<Nin;i++) s+=in[i]*w[o*Nin+i];
+            out[o]=(relu&&s<0.f)?0.f:s;
+        }
+        return out;
+    }
+
+    vector<float> do_softmax(const vector<float>& in) {
+        int n=in.size();
+        vector<float> out(n);
+        float mx=*max_element(in.begin(),in.end());
+        float sm=0.f;
+        for (int i=0;i<n;i++){ out[i]=exp(in[i]-mx); sm+=out[i]; }
+        for (int i=0;i<n;i++) out[i]/=sm;
+        return out;
+    }
+
+    // ============================================================
+    // NI: enqueue outgoing tiles
+    // ============================================================
+    void ni_send(int dest, int pkt_type, int ch_start,
+                 const vector<float>& datas) {
+        int total=(int)datas.size();
+        if (total==0) {
+            Packet* p=new Packet();
+            p->dest_id=dest; p->pkt_type=pkt_type;
+            p->ch_start=ch_start; p->tile_idx=0;
+            tx_queue.push(p); tx_ready.notify(); return;
+        }
+        for (int off=0,tidx=0; off<total; off+=TILE_SIZE,tidx++) {
+            Packet* p=new Packet();
+            p->dest_id=dest; p->pkt_type=pkt_type;
+            p->ch_start=ch_start; p->tile_idx=tidx;
+            int end=min(off+TILE_SIZE,total);
+            p->datas.insert(p->datas.end(),datas.begin()+off,datas.begin()+end);
+            tx_queue.push(p);
+        }
+        tx_ready.notify();
+    }
+
+    // ============================================================
+    // TX thread
+    // ============================================================
     void tx_thread() {
-        req_tx.write(0);
+        req_tx.write(0); flit_tx.write(0);
         while (true) {
-            while (tx_queue.empty()) wait();
-            Packet* p = tx_queue.front();
-            tx_queue.pop();
-            send_packet(p);
+            if (tx_queue.empty()) wait(tx_ready);
+            if (tx_queue.empty()) continue;
+            Packet* p=tx_queue.front(); tx_queue.pop();
+            noc_send_packet(p->dest_id, core_id,
+                            p->pkt_type, p->ch_start, p->tile_idx,
+                            p->datas, flit_tx, req_tx, ack_tx);
             delete p;
         }
     }
 
-    // Receive a full packet and return it
-    Packet* recv_packet() {
-        Packet* p = NULL;
-        while (true) {
-            while (req_rx.read() == 0) wait();
-            sc_lv<34> f = flit_rx.read();
-            ack_rx.write(1);
-            while (req_rx.read() == 1) wait();
-            ack_rx.write(0);
-
-            unsigned int type = f.range(33,32).to_uint();
-            if (type == 2) {
-                p = new Packet();
-                p->dest_id   = f.range(31,16).to_uint();
-                p->source_id = f.range(15, 0).to_uint();
-            } else if (type == 0 || type == 1) {
-                union { float fv; unsigned int iv; } cv;
-                cv.iv = f.range(31,0).to_uint();
-                if (p) p->datas.push_back(cv.fv);
-                if (type == 1 && p) return p;
-            }
-            wait();
-        }
-        return NULL;
-    }
-
+    // ============================================================
+    // RX + PE thread
+    // ============================================================
     void rx_thread() {
         ack_rx.write(0);
+        // tile accumulation: key=(pkt_type<<16|ch_start) -> tile_idx->data
+        map<int, map<int,vector<float>>> bufs;
+
         while (true) {
-            Packet* p = recv_packet();
+            Packet* p = noc_recv_packet(flit_rx, req_rx, ack_rx);
             if (!p) { wait(); continue; }
+            cout<<"[Core "<<core_id<<"] recv pkt type="<<p->pkt_type
+                <<" ch_start="<<p->ch_start<<" tile="<<p->tile_idx
+                <<" size="<<p->datas.size()<<endl;
 
-            Packet* out = new Packet();
+            int ptype=p->pkt_type, cs=p->ch_start, tidx=p->tile_idx;
+            int key=(ptype<<16)|(cs&0xFFFF);
+            bufs[key][tidx]=move(p->datas);
+            delete p;
 
-            if (core_id == 1) {
-                // Input: 150528 floats (image)
-                // Reconstruct vector<float>
-                vector<float> raw(p->datas.begin(), p->datas.end());
-                delete p;
+            // --- Conv1: cores 0-3 ---
+            if (ptype==PKT_CONV1_IN && core_id>=0 && core_id<=3) {
+                int exp=3*224*224 + 16*3*11*11 + 16;
+                cout<<"[Core "<<core_id<<"] Conv1 buf "<<bufs[key].size()<<"/"<<n_tiles(exp)<<endl;
+                if ((int)bufs[key].size()==n_tiles(exp)) {
+                    cout<<"[Core "<<core_id<<"] Conv1 computing..."<<endl;
+                    vector<float> flat=merge_tiles(bufs[key]); bufs.erase(key);
+                    vector<float> out;
+                    do_conv1(flat, out);
+                    int oc_start=(cs&0xFFF);
+                    cout<<"[Core "<<core_id<<"] Conv1+Pool1 done ch "
+                        <<oc_start<<"-"<<oc_start+15<<endl;
+                    ni_send(CTRL_ID, PKT_CONV_OUT, oc_start, out);
+                }
 
-                input_layer.load_data_and_pad(raw);
-                conv1.process(input_layer.output);
-                pool1.process(conv1.output);
+            // --- Conv2-5: packed payload [FM | weights | biases] ---
+            // ch_start = CONV_CS(layer, oc_start)
+            } else if (ptype==PKT_CONV_IN) {
+                // Packed: [FM flat | ch_per*Cin*K*K weights | ch_per biases]
+                int layer    = (cs>>12)&0xF;
+                int oc_start = cs&0xFFF;
 
-                // Flatten [64][27][27] -> 46656 floats
-                out->source_id = core_id;
-                out->dest_id   = 2;
-                out->datas.reserve(64*27*27);
-                for (int c=0; c<64; c++)
-                    for (int r=0; r<27; r++)
-                        for (int col=0; col<27; col++)
-                            out->datas.push_back(pool1.output[c][r][col]);
+                int ch_per_arr[]={0,0,12,24,16,16}; // Cout/16
+                int Cin_arr[]   ={0,0,64,192,384,256};
+                int K_arr[]     ={0,0, 5,  3,  3,  3};
+                int Hin_arr[]   ={0,0,27, 13, 13, 13};
+                int Win_arr[]   ={0,0,27, 13, 13, 13};
+                int ch_per=ch_per_arr[layer], Cin=Cin_arr[layer], K=K_arr[layer];
+                int Hin=Hin_arr[layer], Win=Win_arr[layer];
+                int fm_sz=Cin*Hin*Win, w_sz=ch_per*Cin*K*K;
+                int exp=fm_sz + w_sz + ch_per;
 
-            } else if (core_id == 2) {
-                // Input: 46656 floats [64][27][27]
-                FeatureMap fm(64, vector<vector<float>>(27, vector<float>(27)));
-                int idx=0;
-                for (int c=0; c<64; c++)
-                    for (int r=0; r<27; r++)
-                        for (int col=0; col<27; col++)
-                            fm[c][r][col] = p->datas[idx++];
-                delete p;
+                if ((int)bufs[key].size()==n_tiles(exp)) {
+                    vector<float> flat=merge_tiles(bufs[key]); bufs.erase(key);
+                    // do_conv handles packed payload
+                    vector<float> out;
+                    do_conv(layer, flat, ch_per, out);
+                    cout<<"[Core "<<core_id<<"] Conv"<<layer
+                        <<" ch "<<oc_start<<"-"<<oc_start+ch_per-1<<" done"<<endl;
+                    ni_send(CTRL_ID, PKT_CONV_OUT, oc_start, out);
+                }
 
-                conv2.process(fm);
-                pool2.process(conv2.output);
-                conv3.process(pool2.output);
-                conv4.process(conv3.output);
-                conv5.process(conv4.output);
-                pool5.process(conv5.output);
+            // --- FC weight preload: cores 0-7 (FC6,FC7) and core 15 (FC8) ---
+            } else if (ptype==PKT_FC_W && core_id>=0 && core_id<=7) {
+                int round=cs; // 6=FC6 weights, 7=FC7 weights
+                int Nin=(round==6)?9216:4096, Nout=512;
+                int exp=Nin*Nout+Nout;
+                cout<<"[Core "<<core_id<<"] FC"<<round<<" weight buf "
+                    <<bufs[key].size()<<"/"<<n_tiles(exp)<<endl;
+                if ((int)bufs[key].size()==n_tiles(exp)) {
+                    vector<float> flat=merge_tiles(bufs[key]); bufs.erase(key);
+                    int wsz=Nin*Nout;
+                    if (round==6) {
+                        fc6_w.assign(flat.begin(),flat.begin()+wsz);
+                        fc6_b.assign(flat.begin()+wsz,flat.end());
+                        cout<<"[Core "<<core_id<<"] FC6 weights loaded"<<endl;
+                    } else {
+                        fc7_w.assign(flat.begin(),flat.begin()+wsz);
+                        fc7_b.assign(flat.begin()+wsz,flat.end());
+                        cout<<"[Core "<<core_id<<"] FC7 weights loaded"<<endl;
+                    }
+                }
 
-                // Flatten [256][6][6] -> 9216
-                out->source_id = core_id;
-                out->dest_id   = 3;
-                out->datas.reserve(9216);
-                for (int c=0; c<256; c++)
-                    for (int r=0; r<6; r++)
-                        for (int col=0; col<6; col++)
-                            out->datas.push_back(pool5.output[c][r][col]);
+            } else if (ptype==PKT_FC_W && core_id==15) {
+                int exp=4096*1000+1000;
+                cout<<"[Core 15] FC8 weight buf "<<bufs[key].size()<<"/"<<n_tiles(exp)<<endl;
+                if ((int)bufs[key].size()==n_tiles(exp)) {
+                    vector<float> flat=merge_tiles(bufs[key]); bufs.erase(key);
+                    int wsz=4096*1000;
+                    fc8_w.assign(flat.begin(),flat.begin()+wsz);
+                    fc8_b.assign(flat.begin()+wsz,flat.end());
+                    cout<<"[Core 15] FC8 weights loaded"<<endl;
+                }
 
-            } else if (core_id == 3) {
-                // Input: 9216 floats
-                vector<float> flat(p->datas.begin(), p->datas.end());
-                delete p;
+            // --- FC6-7 inference: cores 0-7 ---
+            } else if (ptype==PKT_FC_IN && core_id>=0 && core_id<=7) {
+                int round=cs; // 6 or 7
+                int exp=(round==6)?9216:4096;
+                cout<<"[Core "<<core_id<<"] FC"<<round<<" input buf "
+                    <<bufs[key].size()<<"/"<<n_tiles(exp)<<endl;
+                if ((int)bufs[key].size()==n_tiles(exp)) {
+                    vector<float> input=merge_tiles(bufs[key]); bufs.erase(key);
+                    vector<float> out;
+                    if (round==6) {
+                        out=do_fc(fc6_w,fc6_b,input,512,true);
+                        cout<<"[Core "<<core_id<<"] FC6 done neurons "
+                            <<core_id*512<<"-"<<core_id*512+511<<endl;
+                    } else {
+                        out=do_fc(fc7_w,fc7_b,input,512,true);
+                        cout<<"[Core "<<core_id<<"] FC7 done neurons "
+                            <<core_id*512<<"-"<<core_id*512+511<<endl;
+                    }
+                    ni_send(CTRL_ID, PKT_FC_OUT, core_id*512, out);
+                }
 
-                fc6.process(flat);
-                fc7.process(fc6.output);
-                fc8.process(fc7.output);
-                softmax_layer.process(fc8.output);
+            // --- FC8+Softmax: core 15 ---
+            } else if (ptype==PKT_FC8_IN && core_id==15) {
+                if ((int)bufs[key].size()==n_tiles(4096)) {
+                    vector<float> input=merge_tiles(bufs[key]); bufs.erase(key);
+                    auto fc8_out=do_fc(fc8_w,fc8_b,input,1000,false);
+                    auto sm_out =do_softmax(fc8_out);
+                    cout<<"[Core 15] FC8+Softmax done, sending result..."<<endl;
+                    vector<float> result;
+                    result.reserve(2000);
+                    for (int i=0;i<1000;i++) result.push_back(fc8_out[i]);
+                    for (int i=0;i<1000;i++) result.push_back(sm_out[i]);
+                    ni_send(CTRL_ID, PKT_RESULT, 0, result);
+                }
 
-                // Send fc8 (linear) + softmax back to controller (id=0)
-                // Pack: [1000 linear] then [1000 softmax]
-                out->source_id = core_id;
-                out->dest_id   = 0;
-                out->datas.reserve(2000);
-                for (int i=0; i<1000; i++) out->datas.push_back(fc8.output[i]);
-                for (int i=0; i<1000; i++) out->datas.push_back(softmax_layer.output[i]);
             } else {
-                delete p;
-                delete out;
-                out = NULL;
+                // Packet not meant for this core or unknown type; discard
+                bufs.erase(key);
             }
-
-            if (out) tx_queue.push(out);
         }
+    }
+
+    static vector<float> merge_tiles(map<int,vector<float>>& tiles) {
+        vector<float> out;
+        for (auto it=tiles.begin(); it!=tiles.end(); ++it)
+            out.insert(out.end(), it->second.begin(), it->second.end());
+        return out;
     }
 
     SC_HAS_PROCESS(Core);
     Core(sc_module_name name) : sc_module(name), core_id(0) {
-        SC_THREAD(tx_thread);
-        sensitive << clk.pos();
-        SC_THREAD(rx_thread);
-        sensitive << clk.pos();
+        SC_THREAD(tx_thread); sensitive << clk.pos();
+        SC_THREAD(rx_thread); sensitive << clk.pos();
     }
-};
+}; // end SC_MODULE(Core)
 
 #endif
