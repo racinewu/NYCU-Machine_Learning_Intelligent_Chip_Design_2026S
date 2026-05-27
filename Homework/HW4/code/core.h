@@ -460,7 +460,6 @@ SC_MODULE(Core) {
             } else if (ptype == PKT_FC_IN && core_id >= 0 && core_id <= (CORES_FC6-1)) {
                 int round = cs;
                 int Nout  = 4096/CORES_FC6;
-                LOG2("[Core " << core_id << "] FC" << round << " input buf received");
                 vector<float> out;
                 if (round==6) {
                     out = do_fc(fc6_w, fc6_b, flat, Nout, true);
