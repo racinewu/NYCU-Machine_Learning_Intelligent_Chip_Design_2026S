@@ -3,6 +3,7 @@
 
 #include "systemc.h"
 #include "noc_io.h"
+#include "config.h"
 #include <vector>
 #include <queue>
 #include <map>
@@ -52,9 +53,20 @@ SC_MODULE(Core) {
     vector<float> fc7_w, fc7_b;
     vector<float> fc8_w, fc8_b;  // core 15 only
 
-    // NI TX queue
+    // NI TX queue (NI -> Router)
     queue<Packet*> tx_queue;
     sc_event       tx_ready;
+
+    // NI -> PE queue: fully reassembled logical packets
+    // rx_thread (NI) assembles tiles then pushes here;
+    // compute_thread (PE) pops and performs NN computation.
+    struct ComputeJob {
+        int pkt_type;
+        int ch_start;   // layer+oc encoding or round number
+        vector<float> payload;
+    };
+    queue<ComputeJob> compute_queue;
+    sc_event          compute_ready;
 
     void init(int id, const string& dir = "") {
         core_id  = id;
@@ -318,135 +330,165 @@ SC_MODULE(Core) {
     }
 
     // ============================================================
-    // RX + PE thread
+    // NI RX thread: receive flits, assemble tiles, push to compute_queue.
+    // No computation here — pure protocol handling.
     // ============================================================
     void rx_thread() {
         ack_rx.write(0);
-        // tile accumulation: key=(pkt_type<<16|ch_start) -> tile_idx->data
         map<int, map<int,vector<float>>> bufs;
 
         while (true) {
             Packet* p = noc_recv_packet(flit_rx, req_rx, ack_rx);
             if (!p) { wait(); continue; }
-            cout<<"[Core "<<core_id<<"] recv pkt type="<<p->pkt_type
-                <<" ch_start="<<p->ch_start<<" tile="<<p->tile_idx
-                <<" size="<<p->datas.size()<<endl;
+            LOG3("[Core " << core_id << "] recv pkt type=" << p->pkt_type
+                << " ch_start=" << p->ch_start << " tile=" << p->tile_idx
+                << " size=" << p->datas.size());
 
-            int ptype=p->pkt_type, cs=p->ch_start, tidx=p->tile_idx;
-            int key=(ptype<<16)|(cs&0xFFFF);
-            bufs[key][tidx]=move(p->datas);
+            int ptype = p->pkt_type;
+            int cs    = p->ch_start;
+            int tidx  = p->tile_idx;
+            int key   = (ptype << 16) | (cs & 0xFFFF);
+
+            bufs[key][tidx] = move(p->datas);
             delete p;
 
-            // --- Conv1: cores 0-3 ---
-            if (ptype==PKT_CONV1_IN && core_id>=0 && core_id<=3) {
-                int exp=3*224*224 + 16*3*11*11 + 16;
-                cout<<"[Core "<<core_id<<"] Conv1 buf "<<bufs[key].size()<<"/"<<n_tiles(exp)<<endl;
-                if ((int)bufs[key].size()==n_tiles(exp)) {
-                    cout<<"[Core "<<core_id<<"] Conv1 computing..."<<endl;
-                    vector<float> flat=merge_tiles(bufs[key]); bufs.erase(key);
-                    vector<float> out;
-                    do_conv1(flat, out);
-                    int oc_start=(cs&0xFFF);
-                    cout<<"[Core "<<core_id<<"] Conv1+Pool1 done ch "
-                        <<oc_start<<"-"<<oc_start+15<<endl;
-                    ni_send(CTRL_ID, PKT_CONV_OUT, oc_start, out);
-                }
-
-            // --- Conv2-5: packed payload [FM | weights | biases] ---
-            // ch_start = CONV_CS(layer, oc_start)
-            } else if (ptype==PKT_CONV_IN) {
-                // Packed: [FM flat | ch_per*Cin*K*K weights | ch_per biases]
-                int layer    = (cs>>12)&0xF;
-                int oc_start = cs&0xFFF;
-
-                int ch_per_arr[]={0,0,12,24,16,16}; // Cout/16
-                int Cin_arr[]   ={0,0,64,192,384,256};
-                int K_arr[]     ={0,0, 5,  3,  3,  3};
-                int Hin_arr[]   ={0,0,27, 13, 13, 13};
-                int Win_arr[]   ={0,0,27, 13, 13, 13};
-                int ch_per=ch_per_arr[layer], Cin=Cin_arr[layer], K=K_arr[layer];
-                int Hin=Hin_arr[layer], Win=Win_arr[layer];
-                int fm_sz=Cin*Hin*Win, w_sz=ch_per*Cin*K*K;
-                int exp=fm_sz + w_sz + ch_per;
-
-                if ((int)bufs[key].size()==n_tiles(exp)) {
-                    vector<float> flat=merge_tiles(bufs[key]); bufs.erase(key);
-                    // do_conv handles packed payload
-                    vector<float> out;
-                    do_conv(layer, flat, ch_per, out);
-                    cout<<"[Core "<<core_id<<"] Conv"<<layer
-                        <<" ch "<<oc_start<<"-"<<oc_start+ch_per-1<<" done"<<endl;
-                    ni_send(CTRL_ID, PKT_CONV_OUT, oc_start, out);
-                }
-
-            // --- FC weight preload: PKT_FC_W ---
-            // cs=6: FC6 weight [256*9216 + 256 bias], all 16 cores
-            // cs=7: FC7 weight [256*4096 + 256 bias], all 16 cores
-            // cs=8: FC8 weight [1000*4096 + 1000 bias], core 15 only
-            } else if (ptype==PKT_FC_W) {
-                int round=cs;
-                int Nin  =(round==6)?9216:4096;
-                int Nout =(round==8)?1000:256;
-                int exp  = Nin*Nout + Nout;
-                if ((int)bufs[key].size()==n_tiles(exp)) {
-                    vector<float> flat=merge_tiles(bufs[key]); bufs.erase(key);
-                    int wsz=Nin*Nout;
-                    if (round==6) {
-                        fc6_w.assign(flat.begin(), flat.begin()+wsz);
-                        fc6_b.assign(flat.begin()+wsz, flat.end());
-                        cout<<"[Core "<<core_id<<"] FC6 weights loaded ("<<wsz<<" floats)"<<endl;
-                    } else if (round==7) {
-                        fc7_w.assign(flat.begin(), flat.begin()+wsz);
-                        fc7_b.assign(flat.begin()+wsz, flat.end());
-                        cout<<"[Core "<<core_id<<"] FC7 weights loaded ("<<wsz<<" floats)"<<endl;
-                    } else if (round==8 && core_id==15) {
-                        fc8_w.assign(flat.begin(), flat.begin()+wsz);
-                        fc8_b.assign(flat.begin()+wsz, flat.end());
-                        cout<<"[Core 15] FC8 weights loaded ("<<wsz<<" floats)"<<endl;
-                    }
-                }
-
-            // --- FC6-7 inference: all 16 cores, 256 neurons each ---
-            } else if (ptype==PKT_FC_IN && core_id>=0 && core_id<=7) {
-                int round=cs; // 6 or 7
-                int exp=(round==6)?9216:4096;
-                cout<<"[Core "<<core_id<<"] FC"<<round<<" input buf "
-                    <<bufs[key].size()<<"/"<<n_tiles(exp)<<endl;
-                if ((int)bufs[key].size()==n_tiles(exp)) {
-                    vector<float> input=merge_tiles(bufs[key]); bufs.erase(key);
-                    vector<float> out;
-                    if (round==6) {
-                        out=do_fc(fc6_w,fc6_b,input,512,true);
-                        cout<<"[Core "<<core_id<<"] FC6 done neurons "
-                            <<core_id*512<<"-"<<core_id*512+511<<endl;
-                    } else {
-                        out=do_fc(fc7_w,fc7_b,input,512,true);
-                        cout<<"[Core "<<core_id<<"] FC7 done neurons "
-                            <<core_id*512<<"-"<<core_id*512+511<<endl;
-                    }
-                    ni_send(CTRL_ID, PKT_FC_OUT, core_id*512, out);
-                }
-
-            // --- FC8+Softmax: core 15 ---
-            } else if (ptype==PKT_FC8_IN && core_id==15) {
-                if ((int)bufs[key].size()==n_tiles(4096)) {
-                    vector<float> input=merge_tiles(bufs[key]); bufs.erase(key);
-                    auto fc8_out=do_fc(fc8_w,fc8_b,input,1000,false);
-                    auto sm_out =do_softmax(fc8_out);
-                    cout<<"[Core 15] FC8+Softmax done, sending result..."<<endl;
-                    vector<float> result;
-                    result.reserve(2000);
-                    for (int i=0;i<1000;i++) result.push_back(fc8_out[i]);
-                    for (int i=0;i<1000;i++) result.push_back(sm_out[i]);
-                    ni_send(CTRL_ID, PKT_RESULT, 0, result);
-                }
-
-            } else {
-                // Packet not meant for this core or unknown type; discard
+            // Determine expected tile count for this transfer
+            int exp_tiles = expected_tiles(ptype, cs);
+            if (exp_tiles > 0 && (int)bufs[key].size() == exp_tiles) {
+                ComputeJob job;
+                job.pkt_type = ptype;
+                job.ch_start = cs;
+                job.payload  = merge_tiles(bufs[key]);
                 bufs.erase(key);
+                compute_queue.push(job);
+                compute_ready.notify();
             }
         }
     }
+
+    // Returns expected number of tiles for a given (pkt_type, ch_start).
+    // Returns 0 if not yet determinable (will retry next tile).
+    int expected_tiles(int ptype, int cs) {
+        if (ptype == PKT_CONV1_IN)
+            return n_tiles(3*224*224 + 16*3*11*11 + 16);
+        if (ptype == PKT_CONV_IN) {
+            int layer = (cs>>12)&0xF;
+            int ch_per_arr[] = {0,0,12,24,16,16};
+            int Cin_arr[]    = {0,0,64,192,384,256};
+            int K_arr[]      = {0,0, 5,  3,  3,  3};
+            int Hin_arr[]    = {0,0,27, 13, 13, 13};
+            int Win_arr[]    = {0,0,27, 13, 13, 13};
+            int ch_per=ch_per_arr[layer], Cin=Cin_arr[layer], K=K_arr[layer];
+            int Hin=Hin_arr[layer], Win=Win_arr[layer];
+            return n_tiles(Cin*Hin*Win + ch_per*Cin*K*K + ch_per);
+        }
+        if (ptype == PKT_FC_W) {
+            int round = cs;
+            int Nin  = (round==6)?9216:4096;
+            int Nout = (round==8)?1000:(4096/CORES_FC6);
+            return n_tiles(Nin*Nout + Nout);
+        }
+        if (ptype == PKT_FC_IN) {
+            int round = cs;
+            return n_tiles((round==6)?9216:4096);
+        }
+        if (ptype == PKT_FC8_IN)
+            return n_tiles(4096);
+        return 0;
+    }
+
+    // ============================================================
+    // PE compute thread: pop from compute_queue, run NN computation,
+    // push results to tx_queue. No flit handling here.
+    // ============================================================
+    void compute_thread() {
+        while (true) {
+            if (compute_queue.empty()) wait(compute_ready);
+            if (compute_queue.empty()) continue;
+            ComputeJob job = compute_queue.front();
+            compute_queue.pop();
+
+            int ptype = job.pkt_type;
+            int cs    = job.ch_start;
+            vector<float>& flat = job.payload;
+
+            // --- Conv1 ---
+            if (ptype == PKT_CONV1_IN && core_id >= 0 && core_id <= 3) {
+                vector<float> out;
+                do_conv1(flat, out);
+                int oc_start = cs & 0xFFF;
+                LOG2("[Core " << setw(2) << core_id
+                    << "] Conv1+Pool1 ch " << setw(3) << oc_start
+                    << "-" << setw(3) << oc_start+15 << " done");
+                ni_send(CTRL_ID, PKT_CONV_OUT, oc_start, out);
+
+            // --- Conv2-5 ---
+            } else if (ptype == PKT_CONV_IN) {
+                int layer    = (cs>>12)&0xF;
+                int oc_start = cs&0xFFF;
+                int ch_per_arr[]={0,0,12,24,16,16};
+                int ch_per = ch_per_arr[layer];
+                vector<float> out;
+                do_conv(layer, flat, ch_per, out);
+                LOG2("[Core " << setw(2) << core_id
+                    << "] Conv" << layer
+                    << " ch " << setw(3) << oc_start
+                    << "-" << setw(3) << oc_start+ch_per-1 << " done");
+                ni_send(CTRL_ID, PKT_CONV_OUT, oc_start, out);
+
+            // --- FC weight preload ---
+            } else if (ptype == PKT_FC_W) {
+                int round = cs;
+                int Nin   = (round==6)?9216:4096;
+                int Nout  = (round==8)?1000:(4096/CORES_FC6);
+                int wsz   = Nin*Nout;
+                if (round==6) {
+                    fc6_w.assign(flat.begin(), flat.begin()+wsz);
+                    fc6_b.assign(flat.begin()+wsz, flat.end());
+                    LOG2("[Core " << core_id << "] FC6 weights loaded (" << wsz << " floats)");
+                } else if (round==7) {
+                    fc7_w.assign(flat.begin(), flat.begin()+wsz);
+                    fc7_b.assign(flat.begin()+wsz, flat.end());
+                    LOG2("[Core " << core_id << "] FC7 weights loaded (" << wsz << " floats)");
+                } else if (round==8 && core_id==15) {
+                    fc8_w.assign(flat.begin(), flat.begin()+wsz);
+                    fc8_b.assign(flat.begin()+wsz, flat.end());
+                    LOG2("[Core 15] FC8 weights loaded (" << wsz << " floats)");
+                }
+
+            // --- FC6-7 inference ---
+            } else if (ptype == PKT_FC_IN && core_id >= 0 && core_id <= (CORES_FC6-1)) {
+                int round = cs;
+                int Nout  = 4096/CORES_FC6;
+                LOG2("[Core " << core_id << "] FC" << round << " input buf received");
+                vector<float> out;
+                if (round==6) {
+                    out = do_fc(fc6_w, fc6_b, flat, Nout, true);
+                    LOG2("[Core " << setw(2) << core_id
+                        << "] FC6 neurons " << setw(4) << core_id*Nout
+                        << "-" << setw(4) << core_id*Nout+Nout-1 << " done");
+                } else {
+                    out = do_fc(fc7_w, fc7_b, flat, Nout, true);
+                    LOG2("[Core " << setw(2) << core_id
+                        << "] FC7 neurons " << setw(4) << core_id*Nout
+                        << "-" << setw(4) << core_id*Nout+Nout-1 << " done");
+                }
+                ni_send(CTRL_ID, PKT_FC_OUT, core_id*Nout, out);
+
+            // --- FC8 + Softmax ---
+            } else if (ptype == PKT_FC8_IN && core_id == 15) {
+                auto fc8_out = do_fc(fc8_w, fc8_b, flat, 1000, false);
+                auto sm_out  = do_softmax(fc8_out);
+                LOG2("[Core 15] FC8+Softmax done, sending result...");
+                vector<float> result;
+                result.reserve(2000);
+                for (int i=0;i<1000;i++) result.push_back(fc8_out[i]);
+                for (int i=0;i<1000;i++) result.push_back(sm_out[i]);
+                ni_send(CTRL_ID, PKT_RESULT, 0, result);
+            }
+        }
+    }
+
 
     static vector<float> merge_tiles(map<int,vector<float>>& tiles) {
         vector<float> out;
@@ -457,8 +499,9 @@ SC_MODULE(Core) {
 
     SC_HAS_PROCESS(Core);
     Core(sc_module_name name) : sc_module(name), core_id(0) {
-        SC_THREAD(tx_thread); sensitive << clk.pos();
-        SC_THREAD(rx_thread); sensitive << clk.pos();
+        SC_THREAD(tx_thread);      sensitive << clk.pos();
+        SC_THREAD(rx_thread);      sensitive << clk.pos();
+        SC_THREAD(compute_thread); sensitive << clk.pos();
     }
 }; // end SC_MODULE(Core)
 

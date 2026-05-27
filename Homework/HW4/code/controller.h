@@ -3,6 +3,7 @@
 
 #include "systemc.h"
 #include "noc_io.h"
+#include "config.h"
 #include "core.h"
 #include <vector>
 #include <queue>
@@ -14,10 +15,6 @@
 #include <cmath>
 using namespace std;
 
-// ch_start for PKT_CONV_IN:
-//   [15:12] = layer (1-5)
-//   [11: 0] = global output channel start for this core (core_id * ch_per_core)
-#define CONV_CS(layer, ch_start) (((layer)<<12)|((ch_start)&0xFFF))
 
 SC_MODULE(Controller) {
     sc_in  <bool>       rst;
@@ -126,15 +123,44 @@ SC_MODULE(Controller) {
         layer_id_valid.write(false);
         while (!data_valid.read()) wait();
         int count = 0;
+        // Read all floats; log interval calculated after total is known.
+        // We use a two-stage approach: buffer silently, then print summary.
+        // For large layers, print every rom_log_interval(estimated_total) floats.
+        // Estimate: use layer sizes known at compile time, keyed by lid.
+        // lid: 1=conv1w, 2=conv2w, 3=conv3w, 4=conv4w, 5=conv5w, 6=fc6w, 7=fc7w, 8=fc8w
+        // bias sizes are small, interval will be large (no prints)
+        static const int known_total[] = {
+            0,                    // 0: image (handled elsewhere)
+            3*64*11*11,           // 1: conv1 weight = 23232
+            64*192*5*5,           // 2: conv2 weight = 307200
+            192*384*3*3,          // 3: conv3 weight = 663552
+            384*256*3*3,          // 4: conv4 weight = 884736
+            256*256*3*3,          // 5: conv5 weight = 589824
+            9216*4096,            // 6: fc6 weight = 37748736
+            4096*4096,            // 7: fc7 weight = 16777216
+            4096*1000             // 8: fc8 weight = 4096000
+        };
+        int est_total = (lid >= 0 && lid <= 8) ? known_total[lid] : 0;
+        if (ltype) est_total = 0; // bias is tiny, skip interval logging
+        int interval = (est_total > 0) ? rom_log_interval(est_total) : 0;
+
         while (data_valid.read()) {
             buf.push_back(data.read());
             count++;
-            if (count % 1000000 == 0)
-                cout<<"[ROM] layer "<<lid<<(ltype?" bias":" weight")
-                    <<" read "<<count/1000000<<"M floats..."<<endl;
+            if (interval > 0 && count % interval == 0) {
+                // Format count as xK or xM
+                ostringstream unit;
+                if (count >= 1000000)      unit << count/1000000 << "M";
+                else if (count >= 1000)    unit << count/1000    << "K";
+                else                       unit << count;
+                LOG2("[ROM] Layer " << lid << (ltype?" bias":" weight")
+                    << " read " << setw(5) << unit.str() << " floats...");
+            }
             wait();
         }
         wait();
+        LOG2("[ROM] Layer " << lid << (ltype?" bias":" weight")
+            << " done: " << count << " floats");
         return buf;
     }
 
@@ -154,12 +180,12 @@ SC_MODULE(Controller) {
     }
 
     // Assemble conv1: 4 cores, 16 ch each
-    vector<float> assemble_conv1(map<int,vector<float>>& parts) {
+    vector<float> assemble_conv1(map<int,vector<float>>& parts, int n_cores=4) {
         int sp=27*27;
         vector<float> out(64*sp,0.f);
         for (auto it=parts.begin();it!=parts.end();++it) {
-            int ch_off=it->first*16;
-            for (int c=0;c<16;c++)
+            int ch_per_=64/n_cores; int ch_off=it->first*ch_per_;
+            for (int c=0;c<ch_per_;c++)
                 for (int s=0;s<sp;s++)
                     out[(ch_off+c)*sp+s]=it->second[c*sp+s];
         }
@@ -210,16 +236,16 @@ SC_MODULE(Controller) {
                             int rom_lid,
                             int Cout, int Cin, int K,
                             int Hout, int Wout,
+                            int n_cores,
                             const string& label) {
-        int ch_per = Cout / 16;
+        int ch_per = Cout / n_cores;
         int kf     = Cin*K*K;
-        cout<<"[Ctrl] "<<label<<" (16 cores, "<<ch_per<<" ch/core)..."<<endl;
+        LOG1("[Ctrl] " << label << " (" << n_cores << " cores, " << ch_per << " ch/core)...");
 
         vector<float> w_all = rom_read(rom_lid, false);
         vector<float> b_all = rom_read(rom_lid, true);
 
-        // Send packed payload to each core: [FM | weight_slice | bias_slice]
-        for (int ci=0; ci<16; ci++) {
+        for (int ci=0; ci<n_cores; ci++) {
             int oc_start = ci*ch_per;
             vector<float> payload;
             payload.insert(payload.end(), fm_in.begin(), fm_in.end());
@@ -231,10 +257,10 @@ SC_MODULE(Controller) {
                            b_all.begin()+oc_start+ch_per);
             enqueue(ci, PKT_CONV_IN, CONV_CS(layer, oc_start), payload);
         }
-        cout<<"[Ctrl] "<<label<<" waiting 16 results..."<<endl;
-        auto res = gather(16, ch_per*Hout*Wout);
-        auto fm_out = assemble_conv(res, 16, ch_per, Hout, Wout);
-        cout<<"[Ctrl] "<<label<<" done -> "<<fm_out.size()<<" floats"<<endl;
+        LOG2("[Ctrl] " << label << " waiting " << n_cores << " results...");
+        auto res = gather(n_cores, ch_per*Hout*Wout);
+        auto fm_out = assemble_conv(res, n_cores, ch_per, Hout, Wout);
+        LOG1("[Ctrl] " << label << " done -> " << shape3(Cout,Hout,Wout));
         return fm_out;
     }
 
@@ -246,17 +272,17 @@ SC_MODULE(Controller) {
         // ============================================================
         // Read image
         // ============================================================
-        cout<<"[Ctrl] Reading image..."<<endl;
+        LOG1("[Ctrl] Reading image...");
         vector<float> image = rom_read(0, false);
-        cout<<"[Ctrl] Image: "<<image.size()<<" floats"<<endl;
+        LOG1("[Ctrl] Image: " << shape3(3,224,224) << " = " << image.size() << " floats");
 
-        cout<<"[Ctrl] Reading Conv1 weights..."<<endl;
+        LOG1("[Ctrl] Conv1 reading weights from ROM...");
         vector<float> c1w = rom_read(1, false);
         vector<float> c1b = rom_read(1, true);
         int kf1 = 3*11*11;
 
-        cout<<"[Ctrl] Conv1+Pool1 (4 cores, 16 ch/core)..."<<endl;
-        for (int ci=0; ci<4; ci++) {
+        LOG1("[Ctrl] Conv1+Pool1 (" << CORES_CONV1 << " cores, " << 64/CORES_CONV1 << " ch/core)...");
+        for (int ci=0; ci<CORES_CONV1; ci++) {
             int ocs=ci*16;
             vector<float> payload;
             payload.insert(payload.end(), image.begin(), image.end());
@@ -264,33 +290,33 @@ SC_MODULE(Controller) {
             payload.insert(payload.end(), c1b.begin()+ocs, c1b.begin()+ocs+16);
             enqueue(ci, PKT_CONV1_IN, CONV_CS(1, ocs), payload);
         }
-        auto r1 = gather(4, 16*27*27);
-        auto fm6427 = assemble_conv1(r1);
-        cout<<"[Ctrl] Conv1+Pool1 done -> "<<fm6427.size()<<" floats"<<endl;
+        auto r1 = gather(CORES_CONV1, (64/CORES_CONV1)*27*27);
+        auto fm6427 = assemble_conv1(r1, CORES_CONV1);
+        LOG1("[Ctrl] Conv1+Pool1 done -> " << shape3(64,27,27));
 
         // ---- Conv2-5 (1 round each, all 16 cores) ----
-        auto fm19213 = run_conv(2, fm6427,  2, 192,  64, 5, 13, 13, "Conv2+Pool2");
-        auto fm38413 = run_conv(3, fm19213, 3, 384, 192, 3, 13, 13, "Conv3");
-        auto fm25613 = run_conv(4, fm38413, 4, 256, 384, 3, 13, 13, "Conv4");
-        auto flat9216= run_conv(5, fm25613, 5, 256, 256, 3,  6,  6, "Conv5+Pool5");
+        auto fm19213 = run_conv(2, fm6427,  2, 192,  64, 5, 13, 13, CORES_CONV2, "Conv2+Pool2");
+        auto fm38413 = run_conv(3, fm19213, 3, 384, 192, 3, 13, 13, CORES_CONV3, "Conv3");
+        auto fm25613 = run_conv(4, fm38413, 4, 256, 384, 3, 13, 13, CORES_CONV4, "Conv4");
+        auto flat9216= run_conv(5, fm25613, 5, 256, 256, 3,  6,  6, CORES_CONV5, "Conv5+Pool5");
 
         // ============================================================
         // FC weight preload: read from ROM then direct-inject into cores
         // Done sequentially after Conv5 to avoid ROM signal contention.
         // wait(cycles) advances simulation time by theoretical NoC TX time.
         // ============================================================
-        cout<<"[Ctrl] Reading FC6 weights from ROM..."<<endl;
+        LOG1("[Ctrl] FC6 reading weights from ROM...");
         fc6_w_cache = rom_read(6, false);
         fc6_b_cache = rom_read(6, true);
-        cout<<"[Ctrl] FC6 weight read: "<<fc6_w_cache.size()<<" floats"<<endl;
+        LOG2("[Ctrl] FC6 weight read: " << fc6_w_cache.size() << " floats");
 
-        cout<<"[Ctrl] FC6 weight inject -> 8 cores..."<<endl;
+        LOG1("[Ctrl] FC6 weight inject -> " << CORES_FC6 << " cores...");
         {
-            const int Nin=9216, Nout=512;
+            const int Nin=9216, Nout=4096/CORES_FC6;
             const int fpc = Nin*Nout + Nout;
-            const long long wc = (long long)8 *
+            const long long wc = (long long)CORES_FC6 *
                 ((fpc/TILE_SIZE + 1) * 3 + fpc) * 6;
-            for (int ci=0; ci<8; ci++) {
+            for (int ci=0; ci<CORES_FC6; ci++) {
                 int ns=ci*Nout;
                 cores[ci]->fc6_w.assign(fc6_w_cache.begin()+ns*Nin,
                                          fc6_w_cache.begin()+(ns+Nout)*Nin);
@@ -298,28 +324,28 @@ SC_MODULE(Controller) {
                                          fc6_b_cache.begin()+ns+Nout);
             }
             wait(wc, SC_NS);
-            cout<<"[Ctrl] FC6 injected (sim +"<<wc<<"ns)"<<endl;
+            LOG2("[Ctrl] FC6 injected (sim +" << wc << "ns)");
         }
 
         // ---- FC6 inference ----
-        cout<<"[Ctrl] FC6 (8 cores, WS)..."<<endl;
-        broadcast(8, PKT_FC_IN, 6, flat9216);
-        auto rfc6 = gather(8, 512);
-        auto fc6out = assemble_fc(rfc6, 8, 512);
-        cout<<"[Ctrl] FC6 done -> "<<fc6out.size()<<" floats"<<endl;
+        LOG1("[Ctrl] FC6 inference (" << CORES_FC6 << " cores, WS)...");
+        broadcast(CORES_FC6, PKT_FC_IN, 6, flat9216);
+        auto rfc6 = gather(CORES_FC6, 4096/CORES_FC6);
+        auto fc6out = assemble_fc(rfc6, CORES_FC6, 4096/CORES_FC6);
+        LOG1("[Ctrl] FC6 done -> " << shape1(4096));
 
-        cout<<"[Ctrl] Reading FC7 weights from ROM..."<<endl;
+        LOG1("[Ctrl] FC7 reading weights from ROM...");
         fc7_w_cache = rom_read(7, false);
         fc7_b_cache = rom_read(7, true);
-        cout<<"[Ctrl] FC7 weight read: "<<fc7_w_cache.size()<<" floats"<<endl;
+        LOG2("[Ctrl] FC7 weight read: " << fc7_w_cache.size() << " floats");
 
-        cout<<"[Ctrl] FC7 weight inject -> 8 cores..."<<endl;
+        LOG1("[Ctrl] FC7 weight inject -> " << CORES_FC7 << " cores...");
         {
-            const int Nin=4096, Nout=512;
+            const int Nin=4096, Nout=4096/CORES_FC7;
             const int fpc = Nin*Nout + Nout;
-            const long long wc = (long long)8 *
+            const long long wc = (long long)CORES_FC7 *
                 ((fpc/TILE_SIZE + 1) * 3 + fpc) * 6;
-            for (int ci=0; ci<8; ci++) {
+            for (int ci=0; ci<CORES_FC7; ci++) {
                 int ns=ci*Nout;
                 cores[ci]->fc7_w.assign(fc7_w_cache.begin()+ns*Nin,
                                          fc7_w_cache.begin()+(ns+Nout)*Nin);
@@ -327,32 +353,32 @@ SC_MODULE(Controller) {
                                          fc7_b_cache.begin()+ns+Nout);
             }
             wait(wc, SC_NS);
-            cout<<"[Ctrl] FC7 injected (sim +"<<wc<<"ns)"<<endl;
+            LOG2("[Ctrl] FC7 injected (sim +" << wc << "ns)");
         }
 
         // ---- FC7 inference ----
-        cout<<"[Ctrl] FC7 (8 cores, WS)..."<<endl;
-        broadcast(8, PKT_FC_IN, 7, fc6out);
-        auto rfc7 = gather(8, 512);
-        auto fc7out = assemble_fc(rfc7, 8, 512);
-        cout<<"[Ctrl] FC7 done -> "<<fc7out.size()<<" floats"<<endl;
+        LOG1("[Ctrl] FC7 inference (" << CORES_FC7 << " cores, WS)...");
+        broadcast(CORES_FC7, PKT_FC_IN, 7, fc6out);
+        auto rfc7 = gather(CORES_FC7, 4096/CORES_FC7);
+        auto fc7out = assemble_fc(rfc7, CORES_FC7, 4096/CORES_FC7);
+        LOG1("[Ctrl] FC7 done -> " << shape1(4096));
 
-        cout<<"[Ctrl] Reading FC8 weights from ROM..."<<endl;
+        LOG1("[Ctrl] FC8 reading weights from ROM...");
         fc8_w_cache = rom_read(8, false);
         fc8_b_cache = rom_read(8, true);
 
         // ---- FC8+Softmax: Core 15 direct inject ----
-        cout<<"[Ctrl] FC8+Softmax @ Core 15..."<<endl;
+        LOG1("[Ctrl] FC8+Softmax @ Core " << CORE_FC8 << "...");
         {
             const int fpc = 4096*1000 + 1000;
             const long long wc = ((fpc/TILE_SIZE + 1) * 3 + fpc) * 6;
-            cores[15]->fc8_w.assign(fc8_w_cache.begin(), fc8_w_cache.end());
-            cores[15]->fc8_b.assign(fc8_b_cache.begin(), fc8_b_cache.end());
+            cores[CORE_FC8]->fc8_w.assign(fc8_w_cache.begin(), fc8_w_cache.end());
+            cores[CORE_FC8]->fc8_b.assign(fc8_b_cache.begin(), fc8_b_cache.end());
             wait(wc, SC_NS);
         }
-        enqueue(15, PKT_FC8_IN, 0, fc7out);
+        enqueue(CORE_FC8, PKT_FC8_IN, 0, fc7out);
         Packet* result = wait_rx();
-        cout<<"[Ctrl] Done."<<endl;
+        LOG1("[Ctrl] Done.");
 
         vector<float> lin(result->datas.begin(), result->datas.begin()+1000);
         vector<float> sm(result->datas.begin()+1000, result->datas.end());
