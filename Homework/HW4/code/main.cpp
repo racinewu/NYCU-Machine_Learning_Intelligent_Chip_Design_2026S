@@ -74,6 +74,12 @@ int sc_main(int argc, char* argv[])
     ctrl.layer_id_valid(layer_id_valid);
     ctrl.data(rom_data); ctrl.data_valid(rom_data_valid);
 
+    // Give controller direct access to core weight buffers
+    // (for bypass weight injection with theoretical wait time)
+    Core* core_ptrs[16];
+    for (int i=0; i<16; i++) core_ptrs[i] = C[i];
+    ctrl.set_cores(core_ptrs);
+
     // -------------------------------------------------------
     // Inter-router East/West links
     // -------------------------------------------------------

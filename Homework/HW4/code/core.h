@@ -3,11 +3,12 @@
 
 #include "systemc.h"
 #include "noc_io.h"
-#include "layers.h"
 #include <vector>
 #include <queue>
 #include <map>
 #include <string>
+#include <cmath>
+#include <algorithm>
 using namespace std;
 
 // ============================================================
@@ -41,9 +42,12 @@ SC_MODULE(Core) {
     sc_out <bool>       req_tx;
     sc_in  <bool>       ack_tx;
 
-    int core_id;
+    int    core_id;
+    string data_dir;
 
-    // FC weight buffers (Weight Stationary, loaded once via NoC)
+    // FC weight buffers loaded via PKT_FC_W packets from Controller
+    // FC6/FC7: all 16 cores, 256 neurons each
+    // FC8: core 15 only, 1000 neurons
     vector<float> fc6_w, fc6_b;
     vector<float> fc7_w, fc7_b;
     vector<float> fc8_w, fc8_b;  // core 15 only
@@ -53,8 +57,10 @@ SC_MODULE(Core) {
     sc_event       tx_ready;
 
     void init(int id, const string& dir = "") {
-        core_id = id;
-        (void)dir;
+        core_id  = id;
+        data_dir = dir;
+        // All weights arrive via NoC from Controller (which reads ROM).
+        // No direct file I/O here.
     }
 
     // ============================================================
@@ -373,39 +379,34 @@ SC_MODULE(Core) {
                     ni_send(CTRL_ID, PKT_CONV_OUT, oc_start, out);
                 }
 
-            // --- FC weight preload: cores 0-7 (FC6,FC7) and core 15 (FC8) ---
-            } else if (ptype==PKT_FC_W && core_id>=0 && core_id<=7) {
-                int round=cs; // 6=FC6 weights, 7=FC7 weights
-                int Nin=(round==6)?9216:4096, Nout=512;
-                int exp=Nin*Nout+Nout;
-                cout<<"[Core "<<core_id<<"] FC"<<round<<" weight buf "
-                    <<bufs[key].size()<<"/"<<n_tiles(exp)<<endl;
+            // --- FC weight preload: PKT_FC_W ---
+            // cs=6: FC6 weight [256*9216 + 256 bias], all 16 cores
+            // cs=7: FC7 weight [256*4096 + 256 bias], all 16 cores
+            // cs=8: FC8 weight [1000*4096 + 1000 bias], core 15 only
+            } else if (ptype==PKT_FC_W) {
+                int round=cs;
+                int Nin  =(round==6)?9216:4096;
+                int Nout =(round==8)?1000:256;
+                int exp  = Nin*Nout + Nout;
                 if ((int)bufs[key].size()==n_tiles(exp)) {
                     vector<float> flat=merge_tiles(bufs[key]); bufs.erase(key);
                     int wsz=Nin*Nout;
                     if (round==6) {
-                        fc6_w.assign(flat.begin(),flat.begin()+wsz);
-                        fc6_b.assign(flat.begin()+wsz,flat.end());
-                        cout<<"[Core "<<core_id<<"] FC6 weights loaded"<<endl;
-                    } else {
-                        fc7_w.assign(flat.begin(),flat.begin()+wsz);
-                        fc7_b.assign(flat.begin()+wsz,flat.end());
-                        cout<<"[Core "<<core_id<<"] FC7 weights loaded"<<endl;
+                        fc6_w.assign(flat.begin(), flat.begin()+wsz);
+                        fc6_b.assign(flat.begin()+wsz, flat.end());
+                        cout<<"[Core "<<core_id<<"] FC6 weights loaded ("<<wsz<<" floats)"<<endl;
+                    } else if (round==7) {
+                        fc7_w.assign(flat.begin(), flat.begin()+wsz);
+                        fc7_b.assign(flat.begin()+wsz, flat.end());
+                        cout<<"[Core "<<core_id<<"] FC7 weights loaded ("<<wsz<<" floats)"<<endl;
+                    } else if (round==8 && core_id==15) {
+                        fc8_w.assign(flat.begin(), flat.begin()+wsz);
+                        fc8_b.assign(flat.begin()+wsz, flat.end());
+                        cout<<"[Core 15] FC8 weights loaded ("<<wsz<<" floats)"<<endl;
                     }
                 }
 
-            } else if (ptype==PKT_FC_W && core_id==15) {
-                int exp=4096*1000+1000;
-                cout<<"[Core 15] FC8 weight buf "<<bufs[key].size()<<"/"<<n_tiles(exp)<<endl;
-                if ((int)bufs[key].size()==n_tiles(exp)) {
-                    vector<float> flat=merge_tiles(bufs[key]); bufs.erase(key);
-                    int wsz=4096*1000;
-                    fc8_w.assign(flat.begin(),flat.begin()+wsz);
-                    fc8_b.assign(flat.begin()+wsz,flat.end());
-                    cout<<"[Core 15] FC8 weights loaded"<<endl;
-                }
-
-            // --- FC6-7 inference: cores 0-7 ---
+            // --- FC6-7 inference: all 16 cores, 256 neurons each ---
             } else if (ptype==PKT_FC_IN && core_id>=0 && core_id<=7) {
                 int round=cs; // 6 or 7
                 int exp=(round==6)?9216:4096;

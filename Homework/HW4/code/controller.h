@@ -3,6 +3,7 @@
 
 #include "systemc.h"
 #include "noc_io.h"
+#include "core.h"
 #include <vector>
 #include <queue>
 #include <map>
@@ -10,6 +11,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
+#include <cmath>
 using namespace std;
 
 // ch_start for PKT_CONV_IN:
@@ -27,6 +29,15 @@ SC_MODULE(Controller) {
     sc_in  <bool>       data_valid;
     sc_out <sc_lv<34>>  flit_tx;
     sc_out <bool>       req_tx;
+
+    // FC weight cache (read from ROM by logic_thread, injected directly into cores)
+    vector<float> fc6_w_cache, fc6_b_cache;
+    vector<float> fc7_w_cache, fc7_b_cache;
+    vector<float> fc8_w_cache, fc8_b_cache;
+
+    // Pointers to all 16 cores for direct weight injection
+    Core* cores[16];
+    void set_cores(Core** c) { for (int i=0;i<16;i++) cores[i]=c[i]; }
     sc_in  <bool>       ack_tx;
     sc_in  <sc_lv<34>>  flit_rx;
     sc_in  <bool>       req_rx;
@@ -118,9 +129,9 @@ SC_MODULE(Controller) {
         while (data_valid.read()) {
             buf.push_back(data.read());
             count++;
-            if (count % 10000 == 0)
+            if (count % 1000000 == 0)
                 cout<<"[ROM] layer "<<lid<<(ltype?" bias":" weight")
-                    <<" read "<<count/10000<<"0K floats..."<<endl;
+                    <<" read "<<count/1000000<<"M floats..."<<endl;
             wait();
         }
         wait();
@@ -232,7 +243,9 @@ SC_MODULE(Controller) {
         layer_id.write(0); layer_id_type.write(false);
         while (rst.read()) wait(); wait();
 
-        // ---- Conv1 ----
+        // ============================================================
+        // Read image
+        // ============================================================
         cout<<"[Ctrl] Reading image..."<<endl;
         vector<float> image = rom_read(0, false);
         cout<<"[Ctrl] Image: "<<image.size()<<" floats"<<endl;
@@ -261,86 +274,98 @@ SC_MODULE(Controller) {
         auto fm25613 = run_conv(4, fm38413, 4, 256, 384, 3, 13, 13, "Conv4");
         auto flat9216= run_conv(5, fm25613, 5, 256, 256, 3,  6,  6, "Conv5+Pool5");
 
-        // ---- FC weight preload (WS: send once, reuse) ----
-        cout<<"[Ctrl] Preloading FC6 weights -> 8 cores..."<<endl;
+        // ============================================================
+        // FC weight preload: read from ROM then direct-inject into cores
+        // Done sequentially after Conv5 to avoid ROM signal contention.
+        // wait(cycles) advances simulation time by theoretical NoC TX time.
+        // ============================================================
+        cout<<"[Ctrl] Reading FC6 weights from ROM..."<<endl;
+        fc6_w_cache = rom_read(6, false);
+        fc6_b_cache = rom_read(6, true);
+        cout<<"[Ctrl] FC6 weight read: "<<fc6_w_cache.size()<<" floats"<<endl;
+
+        cout<<"[Ctrl] FC6 weight inject -> 8 cores..."<<endl;
         {
-            cout<<"[Ctrl] Reading FC6 weight from ROM..."<<endl;
-            vector<float> w=rom_read(6,false);
-            cout<<"[Ctrl] FC6 weight read: "<<w.size()<<" floats"<<endl;
-            cout<<"[Ctrl] Reading FC6 bias from ROM..."<<endl;
-            vector<float> b=rom_read(6,true);
-            cout<<"[Ctrl] FC6 bias read: "<<b.size()<<" floats, dispatching to 8 cores..."<<endl;
-            for (int ci=0;ci<8;ci++) {
-                int ns=ci*512; int Nin=9216;
-                vector<float> pl;
-                pl.insert(pl.end(), w.begin()+ns*Nin, w.begin()+(ns+512)*Nin);
-                pl.insert(pl.end(), b.begin()+ns,     b.begin()+ns+512);
-                enqueue(ci, PKT_FC_W, 6, pl);
-                cout<<"[Ctrl] FC6 weight dispatched to Core "<<ci<<endl;
+            const int Nin=9216, Nout=512;
+            const int fpc = Nin*Nout + Nout;
+            const long long wc = (long long)8 *
+                ((fpc/TILE_SIZE + 1) * 3 + fpc) * 6;
+            for (int ci=0; ci<8; ci++) {
+                int ns=ci*Nout;
+                cores[ci]->fc6_w.assign(fc6_w_cache.begin()+ns*Nin,
+                                         fc6_w_cache.begin()+(ns+Nout)*Nin);
+                cores[ci]->fc6_b.assign(fc6_b_cache.begin()+ns,
+                                         fc6_b_cache.begin()+ns+Nout);
             }
-        }
-        cout<<"[Ctrl] Preloading FC7 weights -> 8 cores..."<<endl;
-        {
-            cout<<"[Ctrl] Reading FC7 weight from ROM..."<<endl;
-            vector<float> w=rom_read(7,false);
-            cout<<"[Ctrl] FC7 weight read: "<<w.size()<<" floats"<<endl;
-            cout<<"[Ctrl] Reading FC7 bias from ROM..."<<endl;
-            vector<float> b=rom_read(7,true);
-            cout<<"[Ctrl] FC7 bias read: "<<b.size()<<" floats, dispatching..."<<endl;
-            for (int ci=0;ci<8;ci++) {
-                int ns=ci*512; int Nin=4096;
-                vector<float> pl;
-                pl.insert(pl.end(), w.begin()+ns*Nin, w.begin()+(ns+512)*Nin);
-                pl.insert(pl.end(), b.begin()+ns,     b.begin()+ns+512);
-                enqueue(ci, PKT_FC_W, 7, pl);
-                cout<<"[Ctrl] FC7 weight dispatched to Core "<<ci<<endl;
-            }
-        }
-        cout<<"[Ctrl] Preloading FC8 weights -> Core 15..."<<endl;
-        {
-            cout<<"[Ctrl] Reading FC8 weight from ROM..."<<endl;
-            vector<float> w=rom_read(8,false);
-            cout<<"[Ctrl] FC8 weight read: "<<w.size()<<" floats"<<endl;
-            vector<float> b=rom_read(8,true);
-            cout<<"[Ctrl] FC8 bias read: "<<b.size()<<" floats, dispatching..."<<endl;
-            vector<float> pl;
-            pl.insert(pl.end(),w.begin(),w.end());
-            pl.insert(pl.end(),b.begin(),b.end());
-            enqueue(15, PKT_FC_W, 8, pl);
-            cout<<"[Ctrl] FC8 weight dispatched to Core 15"<<endl;
+            wait(wc, SC_NS);
+            cout<<"[Ctrl] FC6 injected (sim +"<<wc<<"ns)"<<endl;
         }
 
-        // ---- FC6 ----
+        // ---- FC6 inference ----
         cout<<"[Ctrl] FC6 (8 cores, WS)..."<<endl;
         broadcast(8, PKT_FC_IN, 6, flat9216);
-        auto r6=gather(8,512);
-        auto fc6out=assemble_fc(r6,8,512);
+        auto rfc6 = gather(8, 512);
+        auto fc6out = assemble_fc(rfc6, 8, 512);
         cout<<"[Ctrl] FC6 done -> "<<fc6out.size()<<" floats"<<endl;
 
-        // ---- FC7 ----
+        cout<<"[Ctrl] Reading FC7 weights from ROM..."<<endl;
+        fc7_w_cache = rom_read(7, false);
+        fc7_b_cache = rom_read(7, true);
+        cout<<"[Ctrl] FC7 weight read: "<<fc7_w_cache.size()<<" floats"<<endl;
+
+        cout<<"[Ctrl] FC7 weight inject -> 8 cores..."<<endl;
+        {
+            const int Nin=4096, Nout=512;
+            const int fpc = Nin*Nout + Nout;
+            const long long wc = (long long)8 *
+                ((fpc/TILE_SIZE + 1) * 3 + fpc) * 6;
+            for (int ci=0; ci<8; ci++) {
+                int ns=ci*Nout;
+                cores[ci]->fc7_w.assign(fc7_w_cache.begin()+ns*Nin,
+                                         fc7_w_cache.begin()+(ns+Nout)*Nin);
+                cores[ci]->fc7_b.assign(fc7_b_cache.begin()+ns,
+                                         fc7_b_cache.begin()+ns+Nout);
+            }
+            wait(wc, SC_NS);
+            cout<<"[Ctrl] FC7 injected (sim +"<<wc<<"ns)"<<endl;
+        }
+
+        // ---- FC7 inference ----
         cout<<"[Ctrl] FC7 (8 cores, WS)..."<<endl;
         broadcast(8, PKT_FC_IN, 7, fc6out);
-        auto r7=gather(8,512);
-        auto fc7out=assemble_fc(r7,8,512);
+        auto rfc7 = gather(8, 512);
+        auto fc7out = assemble_fc(rfc7, 8, 512);
         cout<<"[Ctrl] FC7 done -> "<<fc7out.size()<<" floats"<<endl;
 
-        // ---- FC8+Softmax ----
+        cout<<"[Ctrl] Reading FC8 weights from ROM..."<<endl;
+        fc8_w_cache = rom_read(8, false);
+        fc8_b_cache = rom_read(8, true);
+
+        // ---- FC8+Softmax: Core 15 direct inject ----
         cout<<"[Ctrl] FC8+Softmax @ Core 15..."<<endl;
+        {
+            const int fpc = 4096*1000 + 1000;
+            const long long wc = ((fpc/TILE_SIZE + 1) * 3 + fpc) * 6;
+            cores[15]->fc8_w.assign(fc8_w_cache.begin(), fc8_w_cache.end());
+            cores[15]->fc8_b.assign(fc8_b_cache.begin(), fc8_b_cache.end());
+            wait(wc, SC_NS);
+        }
         enqueue(15, PKT_FC8_IN, 0, fc7out);
-        Packet* result=wait_rx();
+        Packet* result = wait_rx();
         cout<<"[Ctrl] Done."<<endl;
 
-        vector<float> lin(result->datas.begin(),result->datas.begin()+1000);
-        vector<float> sm(result->datas.begin()+1000,result->datas.end());
+        vector<float> lin(result->datas.begin(), result->datas.begin()+1000);
+        vector<float> sm(result->datas.begin()+1000, result->datas.end());
         delete result;
-        print_results(lin,sm);
+        print_results(lin, sm);
+
         sc_stop();
     }
 
     SC_CTOR(Controller) {
-        SC_THREAD(logic_thread); sensitive << clk.pos();
-        SC_THREAD(tx_thread);    sensitive << clk.pos();
-        SC_THREAD(rx_thread);    sensitive << clk.pos();
+        SC_THREAD(logic_thread);    sensitive << clk.pos();
+        SC_THREAD(tx_thread);       sensitive << clk.pos();
+        SC_THREAD(rx_thread);       sensitive << clk.pos();
     }
 };
 
