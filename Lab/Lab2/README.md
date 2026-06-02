@@ -9,6 +9,9 @@ Given a simulation time of 1000 ns, implement an AXI-Stream communication pipeli
 - **Deadlock-Free Ready Signal**: `S_AXIS_TREADY` is asserted unconditionally in the else branch, independent of `S_AXIS_TVALID`, preventing producer stall.
 - **Combinational Forwarding**: TDATA and TLAST are forwarded unconditionally every clock — safe under AXI-Stream since the Checker only reads on valid handshake.
 
+> [!NOTE]
+> Asserting S_AXIS_TREADY low during reset delays the first transfer by one clock cycle (10 ns) but does not affect correctness.
+
 ## Processing Pipeline
 1. **Producer sends**: Each rising clock edge, if TREADY is high, write current character to `M_AXIS_TDATA`, assert `M_AXIS_TVALID`, and set `M_AXIS_TLAST` on the last character of the string.
 2. **Forwarder relays**: On reset, de-assert TVALID/TDATA/TLAST. Otherwise, assert `S_AXIS_TREADY`, and directly mirror `S_AXIS_TVALID`, `S_AXIS_TDATA`, `S_AXIS_TLAST` to the master interface.
