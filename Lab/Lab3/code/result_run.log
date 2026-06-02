@@ -1,0 +1,43 @@
+set IC version: IC_06.18.250 (default)
+set LIBERATE version: LIBREATE_21.72.187 (default)
+set hspice version: 2020.03-sp2-2/ (default)
+lsof: WARNING: can't stat() fuse.gvfsd-fuse file system /run/user/19187/gvfs
+      Output information may be incomplete.
+set finesim version: 2022.06/ (default)
+set xa version: 2022.06/ (default)
+set siliconsmart version: 2022.12 (default)
+set customcompiler version: 2020.12-sp1-2/ (default)
+set customexplorer version: 2022.06/ (default)
+set laker_oa version: 2021.06/ (default)
+set calibre version : aoi_cal_2019.2_26.18/
+
+        SystemC 2.3.3-Accellera --- Mar  3 2026 15:59:48
+        Copyright (c) 1996-2018 by all Contributors,
+        ALL RIGHTS RESERVED
+Simulation starting...
+@ 1 ns Asserting reset (ARESETn = 0)
+@ 11 ns De-asserting reset (ARESETn = 1)
+30 ns: Producer: Accepted request for string ID 0. Becoming busy.
+40 ns: Producer: Driving data 'M' (TLAST=0) for ID 0
+40 ns: Producer: Data 'M' sent (handshake).
+50 ns: Producer: Driving data 'L' (TLAST=0) for ID 0
+50 ns: Producer: Data 'L' sent (handshake).
+60 ns: Checker: Received 'M' (TLAST=0, TVALID=1, TREADY_driven=1)
+60 ns: Producer: Driving data 'C' (TLAST=0) for ID 0
+60 ns: Producer: Data 'C' sent (handshake).
+70 ns: Checker: Received 'L' (TLAST=0, TVALID=1, TREADY_driven=1)
+70 ns: Producer: Driving data 'H' (TLAST=0) for ID 0
+70 ns: Producer: Data 'H' sent (handshake).
+80 ns: Checker: Received 'C' (TLAST=0, TVALID=1, TREADY_driven=1)
+80 ns: Producer: Driving data 'I' (TLAST=0) for ID 0
+80 ns: Producer: Data 'I' sent (handshake).
+90 ns: Checker: Received 'H' (TLAST=0, TVALID=1, TREADY_driven=1)
+90 ns: Producer: Driving data 'P' (TLAST=1) for ID 0
+90 ns: Producer: Data 'P' sent (handshake).
+90 ns: Producer: Finished sending string ID 0. Ready for new request.
+100 ns: Checker: Received 'I' (TLAST=0, TVALID=1, TREADY_driven=1)
+110 ns: Checker: Received 'P' (TLAST=1, TVALID=1, TREADY_driven=1)
+110 ns: Checker: Full string received: "MLCHIP"
+110 ns: Checker: String CORRECT! Expected: "MLCHIP"
+110 ns: Checker: All expected strings processed. Congratulations.
+Simulation finished at 1012 ns
