@@ -38,7 +38,7 @@ Lab3/
   │   │   ├── 00_tar       // Pack source files into .tar.gz
   │   │   ├── 01_submit    // Submit and auto-verify on TA server
   │   │   ├── 02_check     // Confirm submission result
-  │   │   └── demo_lab3.sh // TA-provided verification script
+  │   │   └── demo_lab3.py // TA-provided verification script
   │   │
   │   ├── run              // Final executable, e.g., run
   │   ├── Makefile         // Build script to compile the project
