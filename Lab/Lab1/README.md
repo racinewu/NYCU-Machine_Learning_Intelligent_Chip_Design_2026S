@@ -1,4 +1,5 @@
 # SystemC Implementation of Port-to-Port Communication
+AXI-Stream is a unidirectional, point-to-point protocol from the AXI4 family designed for high-throughput data streaming. It simplifies bus communication by removing address signals, relying solely on a handshake mechanism where data transfer occurs only when both TVALID and TREADY are asserted simultaneously.
 
 ## Problem Formulation
 Given a simulation time of 50 seconds, MODULE1 generates a timestamp string every 5 seconds and must successfully relay it through MODULE2 → MODULE3 → CHECKER, while a direct bypass channel validates correctness. MODULE3 is constrained to use `SC_METHOD` + `SC_HAS_PROCESS` instead of the usual `SC_THREAD` + `SC_CTOR`.

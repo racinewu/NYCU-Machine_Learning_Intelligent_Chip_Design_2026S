@@ -1,4 +1,5 @@
 # SystemC Implementation of AXI-Stream Forwarder
+AXI-Stream is a unidirectional, point-to-point protocol from the AXI4 family designed for high-throughput data streaming. It simplifies bus communication by removing address signals, relying solely on a handshake mechanism where data transfer occurs only when both TVALID and TREADY are asserted simultaneously.
 
 ## Problem Formulation
 Given a simulation time of 1000 ns, implement an AXI-Stream communication pipeline where a Producer sends three strings ("HELLO", "NYCU", "MLCHIP") character by character to a Checker for validation. The task is to complete the Forwarder module — a bridge between Producer and Checker — which must correctly relay AXI-Stream signals using `SC_METHOD` sensitive to `ACLK.pos()` and `ARESETn.neg()`.
