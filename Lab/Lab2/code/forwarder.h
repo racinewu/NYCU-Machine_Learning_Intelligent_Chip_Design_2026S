@@ -23,6 +23,7 @@ SC_MODULE(Forwarder) {
     //hint : You can directly pull S_AXIS_TREADY to 1
     void forward_data_proc() {
         if (!ARESETn.read()) {
+            // S_AXIS_TREADY.write(false);
             M_AXIS_TVALID.write(false);
             M_AXIS_TDATA.write('\0');
             M_AXIS_TLAST.write(false);
