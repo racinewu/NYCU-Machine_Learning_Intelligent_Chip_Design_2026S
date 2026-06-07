@@ -29,11 +29,10 @@
 // ============================================================
 #include <iostream>
 #include <iomanip>
-using namespace std;
 
-#define LOG1(msg) do { if (LOG_LEVEL >= 1) { cout << msg << endl; } } while(0)
-#define LOG2(msg) do { if (LOG_LEVEL >= 2) { cout << msg << endl; } } while(0)
-#define LOG3(msg) do { if (LOG_LEVEL >= 3) { cout << msg << endl; } } while(0)
+#define LOG1(msg) do { if (LOG_LEVEL >= 1) { std::cout << msg << std::endl; } } while(0)
+#define LOG2(msg) do { if (LOG_LEVEL >= 2) { std::cout << msg << std::endl; } } while(0)
+#define LOG3(msg) do { if (LOG_LEVEL >= 3) { std::cout << msg << std::endl; } } while(0)
 
 // ============================================================
 // Shape formatting helper
@@ -41,17 +40,17 @@ using namespace std;
 //        SHAPE1(150528)    -> "150528"
 // ============================================================
 #include <sstream>
-inline string shape1(int a) {
-    ostringstream s; s << a; return s.str();
+inline std::string shape1(int a) {
+    std::ostringstream s; s << a; return s.str();
 }
-inline string shape2(int a, int b) {
-    ostringstream s; s << "[" << a << "][" << b << "]"; return s.str();
+inline std::string shape2(int a, int b) {
+    std::ostringstream s; s << "[" << a << "][" << b << "]"; return s.str();
 }
-inline string shape3(int a, int b, int c) {
-    ostringstream s; s << "[" << a << "][" << b << "][" << c << "]"; return s.str();
+inline std::string shape3(int a, int b, int c) {
+    std::ostringstream s; s << "[" << a << "][" << b << "][" << c << "]"; return s.str();
 }
-inline string shape4(int a, int b, int c, int d) {
-    ostringstream s; s << "[" << a << "][" << b << "][" << c << "][" << d << "]"; return s.str();
+inline std::string shape4(int a, int b, int c, int d) {
+    std::ostringstream s; s << "[" << a << "][" << b << "][" << c << "][" << d << "]"; return s.str();
 }
 
 // ============================================================

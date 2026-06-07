@@ -1,4 +1,5 @@
 #include "clockreset.h"
+#include "pe.h"
 #include "core.h"
 #include "router.h"
 #include "controller.h"
@@ -21,7 +22,7 @@
 //
 // Port map: 0=North 1=South 2=East 3=West 4=Local
 
-sc_signal<sc_lv<34>> sf[80];
+sc_signal<sc_lv<FLIT_WIDTH>> sf[80];
 sc_signal<bool>      sb[320];
 int _sf=0, _sb=0;
 
@@ -74,40 +75,34 @@ int sc_main(int argc, char* argv[])
     ctrl.layer_id_valid(layer_id_valid);
     ctrl.data(rom_data); ctrl.data_valid(rom_data_valid);
 
-    // Give controller direct access to core weight buffers
-    // (for bypass weight injection with theoretical wait time)
-    Core* core_ptrs[16];
-    for (int i=0; i<16; i++) core_ptrs[i] = C[i];
-    ctrl.set_cores(core_ptrs);
-
     // -------------------------------------------------------
     // Inter-router East/West links
     // -------------------------------------------------------
-    sc_signal<sc_lv<34>> r01f,r10f, r12f,r21f, r23f,r32f;
+    sc_signal<sc_lv<FLIT_WIDTH>> r01f,r10f, r12f,r21f, r23f,r32f;
     sc_signal<bool> r01q,r01a, r10q,r10a, r12q,r12a, r21q,r21a, r23q,r23a, r32q,r32a;
-    sc_signal<sc_lv<34>> r45f,r54f, r56f,r65f, r67f,r76f;
+    sc_signal<sc_lv<FLIT_WIDTH>> r45f,r54f, r56f,r65f, r67f,r76f;
     sc_signal<bool> r45q,r45a, r54q,r54a, r56q,r56a, r65q,r65a, r67q,r67a, r76q,r76a;
-    sc_signal<sc_lv<34>> r89f,r98f, r9af,ra9f, rabf,rbaf;
+    sc_signal<sc_lv<FLIT_WIDTH>> r89f,r98f, r9af,ra9f, rabf,rbaf;
     sc_signal<bool> r89q,r89a, r98q,r98a, r9aq,r9aa, ra9q,ra9a, rabq,raba, rbaq,rbaa;
-    sc_signal<sc_lv<34>> rcdf,rdcf, rdef,redf, reff,rfef;
+    sc_signal<sc_lv<FLIT_WIDTH>> rcdf,rdcf, rdef,redf, reff,rfef;
     sc_signal<bool> rcdq,rcda, rdcq,rdca, rdeq,rdea, redq,reda, refq,refa, rfeq,rfea;
 
     // Inter-router North/South links
-    sc_signal<sc_lv<34>> r04f,r40f, r48f,r84f, r8cf,rc8f;
+    sc_signal<sc_lv<FLIT_WIDTH>> r04f,r40f, r48f,r84f, r8cf,rc8f;
     sc_signal<bool> r04q,r04a, r40q,r40a, r48q,r48a, r84q,r84a, r8cq,r8ca, rc8q,rc8a;
-    sc_signal<sc_lv<34>> r15f,r51f, r59f,r95f, r9df,rd9f;
+    sc_signal<sc_lv<FLIT_WIDTH>> r15f,r51f, r59f,r95f, r9df,rd9f;
     sc_signal<bool> r15q,r15a, r51q,r51a, r59q,r59a, r95q,r95a, r9dq,r9da, rd9q,rd9a;
-    sc_signal<sc_lv<34>> r26f,r62f, r6af,ra6f, raef,reaF;
+    sc_signal<sc_lv<FLIT_WIDTH>> r26f,r62f, r6af,ra6f, raef,reaF;
     sc_signal<bool> r26q,r26a, r62q,r62a, r6aq,r6aa, ra6q,ra6a, raeq,raea, reaq,reaA;
-    sc_signal<sc_lv<34>> r37f,r73f, r7bf,rb7f, rbff,rfbf;
+    sc_signal<sc_lv<FLIT_WIDTH>> r37f,r73f, r7bf,rb7f, rbff,rfbf;
     sc_signal<bool> r37q,r37a, r73q,r73a, r7bq,r7ba, rb7q,rb7a, rbfq,rbfa, rfbq,rfba;
 
     // Controller <-> R0 North port
-    sc_signal<sc_lv<34>> ctf, crf;
+    sc_signal<sc_lv<FLIT_WIDTH>> ctf, crf;
     sc_signal<bool>      ctq, cta, crq, cra;
 
     // Core LOCAL signals
-    sc_signal<sc_lv<34>> lf[16], lrf[16];
+    sc_signal<sc_lv<FLIT_WIDTH>> lf[16], lrf[16];
     sc_signal<bool>      lq[16], la[16], lrq[16], lra[16];
 
 #define WIRE_EW(A,B, ABf,BAf, ABq,ABa, BAq,BAa) \

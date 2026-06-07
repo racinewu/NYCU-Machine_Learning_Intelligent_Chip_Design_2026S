@@ -10,7 +10,6 @@
 #include <string>
 #include <cmath>
 #include <algorithm>
-using namespace std;
 
 // ============================================================
 // Core assignment (Controller at Router 0, Cores 1-15 at Routers 1-15):
@@ -36,25 +35,25 @@ using namespace std;
 SC_MODULE(Core) {
     sc_in  <bool>       rst;
     sc_in  <bool>       clk;
-    sc_in  <sc_lv<34>>  flit_rx;
+    sc_in  <sc_lv<FLIT_WIDTH>>  flit_rx;
     sc_in  <bool>       req_rx;
     sc_out <bool>       ack_rx;
-    sc_out <sc_lv<34>>  flit_tx;
+    sc_out <sc_lv<FLIT_WIDTH>>  flit_tx;
     sc_out <bool>       req_tx;
     sc_in  <bool>       ack_tx;
 
     int    core_id;
-    string data_dir;
+    std::string data_dir;
 
     // FC weight buffers loaded via PKT_FC_W packets from Controller
     // FC6/FC7: all 16 cores, 256 neurons each
     // FC8: core 15 only, 1000 neurons
-    vector<float> fc6_w, fc6_b;
-    vector<float> fc7_w, fc7_b;
-    vector<float> fc8_w, fc8_b;  // core 15 only
+    std::vector<float> fc6_w, fc6_b;
+    std::vector<float> fc7_w, fc7_b;
+    std::vector<float> fc8_w, fc8_b;  // core 15 only
 
     // NI TX queue (NI -> Router)
-    queue<Packet*> tx_queue;
+    std::queue<Packet*> tx_queue;
     sc_event       tx_ready;
 
     // NI -> PE queue: fully reassembled logical packets
@@ -63,12 +62,12 @@ SC_MODULE(Core) {
     struct ComputeJob {
         int pkt_type;
         int ch_start;   // layer+oc encoding or round number
-        vector<float> payload;
+        std::vector<float> payload;
     };
-    queue<ComputeJob> compute_queue;
+    std::queue<ComputeJob> compute_queue;
     sc_event          compute_ready;
 
-    void init(int id, const string& dir = "") {
+    void init(int id, const std::string& dir = "") {
         core_id  = id;
         data_dir = dir;
         // All weights arrive via NoC from Controller (which reads ROM).
@@ -81,7 +80,7 @@ SC_MODULE(Core) {
 
     // Conv1: receive [image(3*224*224) | weight(16*3*11*11) | bias(16)]
     // Output: [16][27][27] after pool1
-    void do_conv1(const vector<float>& payload, vector<float>& out) {
+    void do_conv1(const std::vector<float>& payload, std::vector<float>& out) {
         int img_sz = 3*224*224, w_sz = 16*3*11*11;
         const float* img = &payload[0];
         const float* W   = &payload[img_sz];
@@ -91,16 +90,16 @@ SC_MODULE(Core) {
         int Hout=55, Wout=55;
 
         // Build padded 227x227 from 224x224
-        vector<vector<vector<float>>> pad(Cin,
-            vector<vector<float>>(Hin, vector<float>(Win, 0.f)));
+        std::vector<std::vector<std::vector<float>>> pad(Cin,
+            std::vector<std::vector<float>>(Hin, std::vector<float>(Win, 0.f)));
         for (int c=0;c<Cin;c++)
             for (int r=0;r<224;r++)
                 for (int col=0;col<224;col++)
                     pad[c][r+2][col+2] = img[c*224*224+r*224+col];
 
         // Conv + ReLU
-        vector<vector<vector<float>>> cv(Cout,
-            vector<vector<float>>(Hout, vector<float>(Wout, 0.f)));
+        std::vector<std::vector<std::vector<float>>> cv(Cout,
+            std::vector<std::vector<float>>(Hout, std::vector<float>(Wout, 0.f)));
         int k2=K*K;
         for (int oc=0;oc<Cout;oc++)
             for (int i=0;i<Hout;i++)
@@ -123,7 +122,7 @@ SC_MODULE(Core) {
                     float mx=-1e30f;
                     for (int kh=0;kh<3;kh++)
                         for (int kw=0;kw<3;kw++)
-                            mx=max(mx, cv[oc][i*2+kh][j*2+kw]);
+                            mx=std::max(mx, cv[oc][i*2+kh][j*2+kw]);
                     out.push_back(mx);
                 }
     }
@@ -131,8 +130,8 @@ SC_MODULE(Core) {
     // Conv2-5: output-channel stationary
     // payload = [FM_flat | weight(n_ch*Cin*K*K) | bias(n_ch)]
     // n_ch = number of output channels this core handles
-    void do_conv(int layer, const vector<float>& payload,
-                 int n_ch, vector<float>& out) {
+    void do_conv(int layer, const std::vector<float>& payload,
+                 int n_ch, std::vector<float>& out) {
         int Cin, K, Hin, Win, pad, stride;
         if      (layer==2){ Cin=64;  K=5; Hin=27; Win=27; pad=2; stride=1; }
         else if (layer==3){ Cin=192; K=3; Hin=13; Win=13; pad=1; stride=1; }
@@ -151,16 +150,16 @@ SC_MODULE(Core) {
 
         // Build padded input
         int ph=Hin+2*pad, pw=Win+2*pad;
-        vector<vector<vector<float>>> padded(Cin,
-            vector<vector<float>>(ph, vector<float>(pw,0.f)));
+        std::vector<std::vector<std::vector<float>>> padded(Cin,
+            std::vector<std::vector<float>>(ph, std::vector<float>(pw,0.f)));
         for (int c=0;c<Cin;c++)
             for (int r=0;r<Hin;r++)
                 for (int col=0;col<Win;col++)
                     padded[c][r+pad][col+pad] = fm_raw[c*Hin*Win+r*Win+col];
 
         // Conv + ReLU for n_ch output channels
-        vector<vector<vector<float>>> cv(n_ch,
-            vector<vector<float>>(Hout, vector<float>(Wout,0.f)));
+        std::vector<std::vector<std::vector<float>>> cv(n_ch,
+            std::vector<std::vector<float>>(Hout, std::vector<float>(Wout,0.f)));
         for (int oc=0;oc<n_ch;oc++)
             for (int i=0;i<Hout;i++)
                 for (int j=0;j<Wout;j++) {
@@ -183,7 +182,7 @@ SC_MODULE(Core) {
                         float mx=-1e30f;
                         for (int kh=0;kh<3;kh++)
                             for (int kw=0;kw<3;kw++)
-                                mx=max(mx,cv[oc][i*2+kh][j*2+kw]);
+                                mx=std::max(mx,cv[oc][i*2+kh][j*2+kw]);
                         out.push_back(mx);
                     }
         } else if (layer==5) {
@@ -194,7 +193,7 @@ SC_MODULE(Core) {
                         float mx=-1e30f;
                         for (int kh=0;kh<3;kh++)
                             for (int kw=0;kw<3;kw++)
-                                mx=max(mx,cv[oc][i*2+kh][j*2+kw]);
+                                mx=std::max(mx,cv[oc][i*2+kh][j*2+kw]);
                         out.push_back(mx);
                     }
         } else {
@@ -209,9 +208,9 @@ SC_MODULE(Core) {
 
     // Compute ONE output channel given separate FM and weight+bias vectors.
     // W = [Cin*K*K floats], bias = 1 float (last element of wb was stripped by caller)
-    vector<float> do_conv_one_ch(int layer,
-                                  const vector<float>& fm,
-                                  const vector<float>& W,
+    std::vector<float> do_conv_one_ch(int layer,
+                                  const std::vector<float>& fm,
+                                  const std::vector<float>& W,
                                   float bias) {
         int Cin, K, Hin, Win, pad, stride;
         if      (layer==2){ Cin=64;  K=5; Hin=27; Win=27; pad=2; stride=1; }
@@ -224,14 +223,14 @@ SC_MODULE(Core) {
         int k2=K*K;
 
         int ph=Hin+2*pad, pw=Win+2*pad;
-        vector<vector<vector<float>>> padded(Cin,
-            vector<vector<float>>(ph,vector<float>(pw,0.f)));
+        std::vector<std::vector<std::vector<float>>> padded(Cin,
+            std::vector<std::vector<float>>(ph,std::vector<float>(pw,0.f)));
         for (int c=0;c<Cin;c++)
             for (int r=0;r<Hin;r++)
                 for (int col=0;col<Win;col++)
                     padded[c][r+pad][col+pad]=fm[c*Hin*Win+r*Win+col];
 
-        vector<float> out_ch(Hout*Wout);
+        std::vector<float> out_ch(Hout*Wout);
         for (int i=0;i<Hout;i++)
             for (int j=0;j<Wout;j++) {
                 float s=bias;
@@ -246,20 +245,20 @@ SC_MODULE(Core) {
 
         // Pool if needed
         if (layer==2) {
-            vector<float> p(13*13);
+            std::vector<float> p(13*13);
             for (int i=0;i<13;i++) for (int j=0;j<13;j++) {
                 float mx=-1e30f;
                 for (int kh=0;kh<3;kh++) for (int kw=0;kw<3;kw++)
-                    mx=max(mx,out_ch[(i*2+kh)*Wout+(j*2+kw)]);
+                    mx=std::max(mx,out_ch[(i*2+kh)*Wout+(j*2+kw)]);
                 p[i*13+j]=mx;
             }
             return p;
         } else if (layer==5) {
-            vector<float> p(6*6);
+            std::vector<float> p(6*6);
             for (int i=0;i<6;i++) for (int j=0;j<6;j++) {
                 float mx=-1e30f;
                 for (int kh=0;kh<3;kh++) for (int kw=0;kw<3;kw++)
-                    mx=max(mx,out_ch[(i*2+kh)*Wout+(j*2+kw)]);
+                    mx=std::max(mx,out_ch[(i*2+kh)*Wout+(j*2+kw)]);
                 p[i*6+j]=mx;
             }
             return p;
@@ -268,10 +267,10 @@ SC_MODULE(Core) {
 
     }
 
-    vector<float> do_fc(const vector<float>& w, const vector<float>& b,
-                        const vector<float>& in, int Nout, bool relu) {
+    std::vector<float> do_fc(const std::vector<float>& w, const std::vector<float>& b,
+                        const std::vector<float>& in, int Nout, bool relu) {
         int Nin=in.size();
-        vector<float> out(Nout);
+        std::vector<float> out(Nout);
         for (int o=0;o<Nout;o++) {
             float s=b[o];
             for (int i=0;i<Nin;i++) s+=in[i]*w[o*Nin+i];
@@ -280,9 +279,9 @@ SC_MODULE(Core) {
         return out;
     }
 
-    vector<float> do_softmax(const vector<float>& in) {
+    std::vector<float> do_softmax(const std::vector<float>& in) {
         int n=in.size();
-        vector<float> out(n);
+        std::vector<float> out(n);
         float mx=*max_element(in.begin(),in.end());
         float sm=0.f;
         for (int i=0;i<n;i++){ out[i]=exp(in[i]-mx); sm+=out[i]; }
@@ -294,7 +293,7 @@ SC_MODULE(Core) {
     // NI: enqueue outgoing tiles
     // ============================================================
     void ni_send(int dest, int pkt_type, int ch_start,
-                 const vector<float>& datas) {
+                 const std::vector<float>& datas) {
         int total=(int)datas.size();
         if (total==0) {
             Packet* p=new Packet();
@@ -306,7 +305,7 @@ SC_MODULE(Core) {
             Packet* p=new Packet();
             p->dest_id=dest; p->pkt_type=pkt_type;
             p->ch_start=ch_start; p->tile_idx=tidx;
-            int end=min(off+TILE_SIZE,total);
+            int end=std::min(off+TILE_SIZE,total);
             p->datas.insert(p->datas.end(),datas.begin()+off,datas.begin()+end);
             tx_queue.push(p);
         }
@@ -335,7 +334,7 @@ SC_MODULE(Core) {
     // ============================================================
     void rx_thread() {
         ack_rx.write(0);
-        map<int, map<int,vector<float>>> bufs;
+        std::map<int, std::map<int,std::vector<float>>> bufs;
 
         while (true) {
             Packet* p = noc_recv_packet(flit_rx, req_rx, ack_rx);
@@ -410,16 +409,16 @@ SC_MODULE(Core) {
 
             int ptype = job.pkt_type;
             int cs    = job.ch_start;
-            vector<float>& flat = job.payload;
+            std::vector<float>& flat = job.payload;
 
             // --- Conv1 ---
             if (ptype == PKT_CONV1_IN && core_id >= 0 && core_id <= 3) {
-                vector<float> out;
+                std::vector<float> out;
                 do_conv1(flat, out);
                 int oc_start = cs & 0xFFF;
-                LOG2("[Core " << setw(2) << core_id
-                    << "] Conv1+Pool1 ch " << setw(3) << oc_start
-                    << "-" << setw(3) << oc_start+15 << " done");
+                LOG2("[Core " << std::setw(2) << core_id
+                    << "] Conv1+Pool1 ch " << std::setw(3) << oc_start
+                    << "-" << std::setw(3) << oc_start+15 << " done");
                 ni_send(CTRL_ID, PKT_CONV_OUT, oc_start, out);
 
             // --- Conv2-5 ---
@@ -428,12 +427,12 @@ SC_MODULE(Core) {
                 int oc_start = cs&0xFFF;
                 int ch_per_arr[]={0,0,12,24,16,16};
                 int ch_per = ch_per_arr[layer];
-                vector<float> out;
+                std::vector<float> out;
                 do_conv(layer, flat, ch_per, out);
-                LOG2("[Core " << setw(2) << core_id
+                LOG2("[Core " << std::setw(2) << core_id
                     << "] Conv" << layer
-                    << " ch " << setw(3) << oc_start
-                    << "-" << setw(3) << oc_start+ch_per-1 << " done");
+                    << " ch " << std::setw(3) << oc_start
+                    << "-" << std::setw(3) << oc_start+ch_per-1 << " done");
                 ni_send(CTRL_ID, PKT_CONV_OUT, oc_start, out);
 
             // --- FC weight preload ---
@@ -455,22 +454,24 @@ SC_MODULE(Core) {
                     fc8_b.assign(flat.begin()+wsz, flat.end());
                     LOG2("[Core 15] FC8 weights loaded (" << wsz << " floats)");
                 }
+                // Send ack back to Controller so it knows weights are loaded
+                ni_send(CTRL_ID, PKT_FC_W, cs, std::vector<float>());
 
             // --- FC6-7 inference ---
             } else if (ptype == PKT_FC_IN && core_id >= 0 && core_id <= (CORES_FC6-1)) {
                 int round = cs;
                 int Nout  = 4096/CORES_FC6;
-                vector<float> out;
+                std::vector<float> out;
                 if (round==6) {
                     out = do_fc(fc6_w, fc6_b, flat, Nout, true);
-                    LOG2("[Core " << setw(2) << core_id
-                        << "] FC6 neurons " << setw(4) << core_id*Nout
-                        << "-" << setw(4) << core_id*Nout+Nout-1 << " done");
+                    LOG2("[Core " << std::setw(2) << core_id
+                        << "] FC6 neurons " << std::setw(4) << core_id*Nout
+                        << "-" << std::setw(4) << core_id*Nout+Nout-1 << " done");
                 } else {
                     out = do_fc(fc7_w, fc7_b, flat, Nout, true);
-                    LOG2("[Core " << setw(2) << core_id
-                        << "] FC7 neurons " << setw(4) << core_id*Nout
-                        << "-" << setw(4) << core_id*Nout+Nout-1 << " done");
+                    LOG2("[Core " << std::setw(2) << core_id
+                        << "] FC7 neurons " << std::setw(4) << core_id*Nout
+                        << "-" << std::setw(4) << core_id*Nout+Nout-1 << " done");
                 }
                 ni_send(CTRL_ID, PKT_FC_OUT, core_id*Nout, out);
 
@@ -479,7 +480,7 @@ SC_MODULE(Core) {
                 auto fc8_out = do_fc(fc8_w, fc8_b, flat, 1000, false);
                 auto sm_out  = do_softmax(fc8_out);
                 LOG2("[Core 15] FC8+Softmax done, sending result...");
-                vector<float> result;
+                std::vector<float> result;
                 result.reserve(2000);
                 for (int i=0;i<1000;i++) result.push_back(fc8_out[i]);
                 for (int i=0;i<1000;i++) result.push_back(sm_out[i]);
@@ -489,8 +490,8 @@ SC_MODULE(Core) {
     }
 
 
-    static vector<float> merge_tiles(map<int,vector<float>>& tiles) {
-        vector<float> out;
+    static std::vector<float> merge_tiles(std::map<int,std::vector<float>>& tiles) {
+        std::vector<float> out;
         for (auto it=tiles.begin(); it!=tiles.end(); ++it)
             out.insert(out.end(), it->second.begin(), it->second.end());
         return out;
