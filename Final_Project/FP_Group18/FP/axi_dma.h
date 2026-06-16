@@ -257,6 +257,11 @@ SC_MODULE(AXI4_DMA) {
         std::cout << "[AXI]  W  data beats   : " << w_beats_
                   << " (" << fmt(w_beats_) << ")" << std::endl;
         std::cout << "[AXI]  B  responses    : " << b_count_  << std::endl;
+        double avg_r = (ar_count_ > 0) ? (double)r_beats_ / ar_count_ : 0.0;
+        double avg_w = (aw_count_ > 0) ? (double)w_beats_ / aw_count_ : 0.0;
+        std::cout << std::fixed << std::setprecision(1);
+        std::cout << "[AXI]  Avg read  ARLEN+1=" << avg_r << " beats"
+                  << " | Avg write AWLEN+1=" << avg_w << " beats" << std::endl;
     }
 
     SC_HAS_PROCESS(AXI4_DMA);

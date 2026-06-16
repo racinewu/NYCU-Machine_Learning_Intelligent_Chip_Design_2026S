@@ -7,10 +7,10 @@
 // 4-bank design, 128 KB per bank, 512 KB total.
 //
 // Conv stage bank roles:
-//   Bank 0 (INPUT_PING) : Input FM buffer (on-chip, no DRAM spill)
-//   Bank 1 (INPUT_PONG) : Output partial sum / spare
-//   Bank 2 (OUTPUT)     : Spare
-//   Bank 3 (WEIGHT)     : Weight tile DMA staging
+//   Bank 0 (INPUT_PING) : Input FM buffer — written from controller, read by PE via NoC
+//   Bank 1 (INPUT_PONG) : Not used in Conv stage (OS output accumulates in PE local SRAM)
+//   Bank 2 (OUTPUT)     : Not used in Conv stage
+//   Bank 3 (WEIGHT)     : Weight tile DMA staging (chunked load for each layer)
 //
 // FC stage bank roles:
 //   Bank 0 (INPUT_PING) : Input activation locked (<=36KB, stays whole inference)
@@ -100,9 +100,6 @@ public:
             else                    s << bytes               << " B";
             return s.str();
         };
-        std::cout << "[SRAM] Banks        : " << n_banks_ << " x "
-                  << bank_cap_ * 4 / 1024 << " KB = "
-                  << capacity() * 4 / 1024 << " KB total" << std::endl;
         std::cout << "[SRAM] Read  volume : "
                   << fmt(read_count_)  << " (" << read_count_  << " floats)" << std::endl;
         std::cout << "[SRAM] Write volume : "

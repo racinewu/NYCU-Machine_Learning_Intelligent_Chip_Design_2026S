@@ -201,7 +201,7 @@ SC_MODULE(Controller) {
         int n   = (int)fm.size();
         int cap = sram_->capacity();
         if (n <= cap) {
-            LOG2("[FM] " << name << " (" << n*4/1024
+            LOG2("[FMAP] " << name << " (" << n*4/1024
                  << " KB) fits in SRAM (" << cap*4/1024
                  << " KB) -- kept on-chip");
             return {0u, fm};
@@ -209,7 +209,7 @@ SC_MODULE(Controller) {
         // Spill to DRAM
         unsigned int addr = DRAM_INTER_BASE + inter_offset_;
         inter_offset_ += (unsigned)(n * 4);
-        LOG2("[FM] " << name << " (" << n*4/1024
+        LOG2("[FMAP] " << name << " (" << n*4/1024
              << " KB) > SRAM (" << cap*4/1024
              << " KB) -- spilled to DRAM @ 0x"
              << std::hex << addr << std::dec);
@@ -221,10 +221,10 @@ SC_MODULE(Controller) {
     // If on-chip: return directly. If spilled: dma_read from DRAM.
     std::vector<float> fm_load(const FmHandle& h, int n_floats) {
         if (!h.spilled()) {
-            LOG2("[FM] loading from on-chip cache (" << n_floats*4/1024 << " KB)");
+            LOG2("[FMAP] loading from on-chip cache (" << n_floats*4/1024 << " KB)");
             return h.data;
         }
-        LOG2("[FM] loading from DRAM @ 0x"
+        LOG2("[FMAP] loading from DRAM @ 0x"
              << std::hex << h.dram_addr << std::dec
              << " (" << n_floats*4/1024 << " KB)");
         return dma_read(h.dram_addr, n_floats);
@@ -264,11 +264,11 @@ SC_MODULE(Controller) {
         load("conv5_weight.txt",DRAM_C5W_BASE);
         load("conv5_bias.txt",  DRAM_C5B_BASE);    LOG2("[DRAM] conv5 w/b loaded");
         load("fc6_weight.txt",  DRAM_FC6W_BASE);
-        load("fc6_bias.txt",    DRAM_FC6B_BASE);   LOG2("[DRAM] fc6  w/b loaded");
+        load("fc6_bias.txt",    DRAM_FC6B_BASE);   LOG2("[DRAM] fc6   w/b loaded");
         load("fc7_weight.txt",  DRAM_FC7W_BASE);
-        load("fc7_bias.txt",    DRAM_FC7B_BASE);   LOG2("[DRAM] fc7  w/b loaded");
+        load("fc7_bias.txt",    DRAM_FC7B_BASE);   LOG2("[DRAM] fc7   w/b loaded");
         load("fc8_weight.txt",  DRAM_FC8W_BASE);
-        load("fc8_bias.txt",    DRAM_FC8B_BASE);   LOG2("[DRAM] fc8  w/b loaded");
+        load("fc8_bias.txt",    DRAM_FC8B_BASE);   LOG2("[DRAM] fc8   w/b loaded");
 
         // Reset stats so only runtime accesses are counted
         dram_->reset_stats();
@@ -621,29 +621,27 @@ SC_MODULE(Controller) {
             : 0.0;
 
         std::cout << std::endl;
-        std::cout << "===== Execution Metrics (Baseline) =============" << std::endl;
+        std::cout << "========== Execution Metrics (Baseline) =========" << std::endl;
         std::cout << "  MAC per PE    : " << MAC_PER_PE << std::endl;
         std::cout << "  Total MACs    : " << MAC_PER_PE * 16 << std::endl;
         std::cout << "  On-chip SRAM  : 1 bank x 128 KB = 128 KB total" << std::endl;
-        std::cout << "  Local SRAM/PE : 0 KB (none)" << std::endl;
+        std::cout << "  PE local SRAM : 0 KB (none)" << std::endl;
         std::cout << "  SRAM bit width: 32 bits (1 float per access)" << std::endl;
         std::cout << "  DRAM bit width: 32 bits (1 float per AXI beat)" << std::endl;
         std::cout << "  Sim time      : " << sim_ns  << " ns" << std::endl;
         std::cout << "  Sim cycles    : " << sim_cyc << " cycles" << std::endl;
         std::cout << std::fixed << std::setprecision(2);
-        std::cout << "  PE utilization: " << pe_util
-                  << "% (weighted avg = active_cores/16 x layer_time%)" << std::endl;
+        std::cout << "  PE utilization: " << pe_util << "%" << std::endl;
 
         // Per-layer time breakdown
         std::cout << std::endl;
-        std::cout << "  --- Per-layer Time Breakdown ---" << std::endl;
         std::cout << "  " << std::left  << std::setw(14) << "Layer"
                   << std::right << std::setw(12) << "Cycles"
                   << std::setw(10) << "Time(ns)"
-                  << std::setw(7)  << "%"
+                  << std::setw(10) << "Time(%)"
                   << std::setw(8)  << "Cores"
                   << std::setw(10) << "PE util" << std::endl;
-        std::cout << "  " << std::string(61, '-') << std::endl;
+        std::cout << "  " << std::string(64, '-') << std::endl;
         for (auto& t : timings) {
             long long layer_ns  = (t.end - t.start) / 1000;
             long long layer_cyc = layer_ns / CLK_PERIOD_NS;
@@ -653,9 +651,9 @@ SC_MODULE(Controller) {
             std::cout << "  " << std::left  << std::setw(14) << t.name
                       << std::right << std::setw(12) << layer_cyc
                       << std::setw(10) << layer_ns
-                      << std::setw(6)  << pct << "%"
-                      << std::setw(8)  << t.active_cores << "/16"
-                      << std::setw(8)  << layer_util << "%" << std::endl;
+                      << std::setw(9)  << pct << "%"
+                      << std::setw(5)  << t.active_cores << "/16"
+                      << std::setw(9) << layer_util << "%" << std::endl;
         }
         std::cout << std::endl;
 

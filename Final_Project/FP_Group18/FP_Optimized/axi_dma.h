@@ -216,10 +216,17 @@ SC_MODULE(AXI4_DMA) {
         std::cout << "[AXI Port1] AR=" << p1_ar
                   << " R=" << p1_r << " (" << fmt(p1_r) << ")"
                   << " (prefetch port, read-only)" << std::endl;
-        std::cout << "[AXI Total] R=" << (p0_r+p1_r)
-                  << " (" << fmt(p0_r+p1_r) << ")"
+        long long total_ar = p0_ar + p1_ar;
+        long long total_r  = p0_r  + p1_r;
+        double avg_burst_r = (total_ar > 0) ? (double)total_r / total_ar : 0.0;
+        double avg_burst_w = (p0_aw   > 0) ? (double)p0_w    / p0_aw    : 0.0;
+        std::cout << "[AXI Total] R=" << total_r
+                  << " (" << fmt(total_r) << ")"
                   << " W=" << p0_w
                   << " (" << fmt(p0_w) << ")" << std::endl;
+        std::cout << std::fixed << std::setprecision(1);
+        std::cout << "[AXI Burst] Avg read  ARLEN+1=" << avg_burst_r << " beats"
+                  << " | Avg write AWLEN+1=" << avg_burst_w << " beats" << std::endl;
     }
 
     SC_HAS_PROCESS(AXI4_DMA);

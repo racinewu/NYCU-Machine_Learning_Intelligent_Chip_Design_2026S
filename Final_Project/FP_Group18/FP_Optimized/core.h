@@ -377,7 +377,7 @@ SC_MODULE(Core) {
         while (true) {
             Packet* p = noc_recv_packet(flit_rx, req_rx, ack_rx);
             if (!p) { wait(); continue; }
-            LOG3("[Core " << core_id << "] recv pkt type=" << p->pkt_type
+            LOG3("[Core " << std::setw(2) << core_id << "] recv pkt type=" << p->pkt_type
                 << " ch_start=" << p->ch_start << " tile=" << p->tile_idx
                 << " size=" << p->datas.size());
 
@@ -515,11 +515,11 @@ SC_MODULE(Core) {
                 if (round==6) {
                     fc6_w.assign(flat.begin(), flat.begin()+wsz);
                     fc6_b.assign(flat.begin()+wsz, flat.end());
-                    LOG2("[Core " << core_id << "] FC6 weights loaded (" << wsz << " floats)");
+                    LOG2("[Core " << std::setw(2) << core_id << "] FC6 weights loaded (" << wsz << " floats)");
                 } else if (round==7) {
                     fc7_w.assign(flat.begin(), flat.begin()+wsz);
                     fc7_b.assign(flat.begin()+wsz, flat.end());
-                    LOG2("[Core " << core_id << "] FC7 weights loaded (" << wsz << " floats)");
+                    LOG2("[Core " << std::setw(2) << core_id << "] FC7 weights loaded (" << wsz << " floats)");
                 } else if (round==8 && core_id==15) {
                     fc8_w.assign(flat.begin(), flat.begin()+wsz);
                     fc8_b.assign(flat.begin()+wsz, flat.end());

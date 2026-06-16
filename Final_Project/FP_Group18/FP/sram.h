@@ -78,9 +78,6 @@ public:
             else                         s << bytes               << " B";
             return s.str();
         };
-        std::cout << "[SRAM] Capacity     : "
-                  << capacity_ * 4 / 1024 << " KB ("
-                  << capacity_ << " floats)" << std::endl;
         std::cout << "[SRAM] Read  volume : "
                   << fmt(read_count_)  << " (" << read_count_  << " floats)" << std::endl;
         std::cout << "[SRAM] Write volume : "
