@@ -22,6 +22,7 @@
 #include "dram.h"
 #include "axi_dma.h"
 #include "sram.h"
+#include "router.h"
 #include <vector>
 #include <queue>
 #include <map>
@@ -53,6 +54,22 @@ SC_MODULE(Controller) {
     // (no compute bypass — weights still sent via NoC PKT_FC_W)
     Core* cores_[16] = {};
     void set_cores(Core** c) { for (int i = 0; i < 16; i++) cores_[i] = c[i]; }
+
+    // Router pointers for NoC utilization stats
+    Router* routers_[16] = {};
+    void set_routers(Router** r) { for (int i = 0; i < 16; i++) routers_[i] = r[i]; }
+
+    // NoC transfer latency tracking
+    long long noc_latency_total_ps_ = 0;
+    long long noc_latency_count_    = 0;
+
+    void record_latency(Packet* p) {
+        if (p && p->send_time_ps > 0) {
+            long long now = (long long)sc_core::sc_time_stamp().value();
+            noc_latency_total_ps_ += (now - p->send_time_ps);
+            noc_latency_count_++;
+        }
+    }
 
     // Execution cycle counter
     long long exec_cycles_ = 0;
@@ -117,6 +134,7 @@ SC_MODULE(Controller) {
         if (rx_q.empty()) wait(rx_arrived);
         while (rx_q.empty()) wait(rx_arrived);
         Packet* p = rx_q.front(); rx_q.pop();
+        record_latency(p);
         return p;
     }
 
@@ -621,7 +639,7 @@ SC_MODULE(Controller) {
             : 0.0;
 
         std::cout << std::endl;
-        std::cout << "========== Execution Metrics (Baseline) =========" << std::endl;
+        std::cout << "========= Execution Metrics (Baseline) =========" << std::endl;
         std::cout << "  MAC per PE    : " << MAC_PER_PE << std::endl;
         std::cout << "  Total MACs    : " << MAC_PER_PE * 16 << std::endl;
         std::cout << "  On-chip SRAM  : 1 bank x 128 KB = 128 KB total" << std::endl;
@@ -638,7 +656,7 @@ SC_MODULE(Controller) {
         std::cout << "  " << std::left  << std::setw(14) << "Layer"
                   << std::right << std::setw(12) << "Cycles"
                   << std::setw(10) << "Time(ns)"
-                  << std::setw(10) << "Time(%)"
+                  << std::setw(10)  << "Time(%)"
                   << std::setw(8)  << "Cores"
                   << std::setw(10) << "PE util" << std::endl;
         std::cout << "  " << std::string(64, '-') << std::endl;
@@ -653,13 +671,31 @@ SC_MODULE(Controller) {
                       << std::setw(10) << layer_ns
                       << std::setw(9)  << pct << "%"
                       << std::setw(5)  << t.active_cores << "/16"
-                      << std::setw(9) << layer_util << "%" << std::endl;
+                      << std::setw(9)  << layer_util << "%" << std::endl;
         }
         std::cout << std::endl;
 
         dram_->print_stats();
         dma_->print_stats();
         sram_->print_stats();
+
+        // NoC statistics
+        long long total_flits = 0;
+        for (int i = 0; i < 16; i++)
+            if (routers_[i]) total_flits += routers_[i]->flit_tx_count_;
+        double noc_util = (sim_cyc > 0)
+            ? (double)total_flits / ((double)sim_cyc * 16.0 * 5.0) * 100.0
+            : 0.0;
+        double avg_lat_ns = (noc_latency_count_ > 0)
+            ? (double)noc_latency_total_ps_ / noc_latency_count_ / 1000.0
+            : 0.0;
+        long long avg_lat_cyc = (long long)(avg_lat_ns / CLK_PERIOD_NS);
+        std::cout << "[NoC]  Total flits transmitted : " << total_flits << std::endl;
+        std::cout << "[NoC]  NoC utilization         : "
+                  << std::fixed << std::setprecision(2) << noc_util << "%" << std::endl;
+        std::cout << "[NoC]  Avg packet latency      : "
+                  << avg_lat_ns << " ns ("
+                  << avg_lat_cyc << " cycles)" << std::endl;
         std::cout << "=================================================" << std::endl;
         std::cout << std::endl;
 

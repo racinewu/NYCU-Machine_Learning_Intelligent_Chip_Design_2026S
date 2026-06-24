@@ -64,6 +64,9 @@ int sc_main(int argc, char* argv[])
     for (int i = 0; i < 16; i++) core_ptrs[i] = C[i];
     ctrl.set_cores(core_ptrs);
 
+    // Pass router pointers for NoC utilization stats
+    ctrl.set_routers(R);
+
     // Determine image file (make cat / make dog)
     const char* env_file = std::getenv("IMAGE_FILE_NAME");
     std::string image_file = (env_file != NULL) ? env_file : "cat.txt";

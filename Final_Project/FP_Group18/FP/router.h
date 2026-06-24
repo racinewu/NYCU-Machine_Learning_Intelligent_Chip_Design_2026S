@@ -30,6 +30,12 @@ SC_MODULE( Router ) {
     int in_target[5];
     int router_id;
 
+    // NoC utilization statistics
+    // flit_tx_count: number of flits actually transmitted (out_req=1 and ack=1)
+    // active_cycles: cycles where at least one output port was transmitting
+    long long flit_tx_count_  = 0;
+    long long active_cycles_  = 0;
+
     void init(int id) { router_id = id; }
 
     int get_xy_route(int dest_id) {
@@ -123,6 +129,7 @@ SC_MODULE( Router ) {
             out_flit[p].write(f);
             while (in_ack[p].read() == 0) wait();
             out_q[p].pop();
+            flit_tx_count_++;   // count each successfully transmitted flit
             out_req[p].write(0);
             while (in_ack[p].read() == 1) wait();
             // No trailing wait()

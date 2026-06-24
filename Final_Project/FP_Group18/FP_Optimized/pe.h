@@ -98,6 +98,7 @@ struct Packet {
     int source_id = 0, dest_id = 0;
     int pkt_type  = 0, ch_start = 0, tile_idx = 0;
     std::vector<float> datas;
+    long long send_time_ps = 0;  // sc_time_stamp().value() when header flit sent
 };
 
 #endif

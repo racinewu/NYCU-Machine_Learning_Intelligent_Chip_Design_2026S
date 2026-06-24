@@ -31,7 +31,8 @@ template<typename F, typename R, typename A>
 inline void noc_send_packet(int dest, int src,
                              int pkt_type, int ch_start, int tile_idx,
                              const std::vector<float>& datas,
-                             F& flit_tx, R& req_tx, A& ack_tx) {
+                             F& flit_tx, R& req_tx, A& ack_tx,
+                             long long send_time_ps = 0) {
     noc_send_flit(make_header(dest, src), flit_tx, req_tx, ack_tx);
     if (datas.empty()) {
         sc_lv<FLIT_WIDTH> m = make_meta(pkt_type, ch_start);
@@ -92,6 +93,7 @@ inline Packet* noc_recv_packet(F& flit_rx, R& req_rx, A& ack_rx) {
             p = new Packet();
             p->dest_id   = f.range(127,112).to_uint();
             p->source_id = f.range(111, 96).to_uint();
+            p->send_time_ps = (long long)sc_core::sc_time_stamp().value();
             state = 1;
         } else if (state == 1) {
             p->pkt_type = f.range(127,120).to_uint();
