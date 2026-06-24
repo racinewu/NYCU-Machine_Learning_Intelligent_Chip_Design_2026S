@@ -11,7 +11,7 @@ int sc_main(int argc, char* argv[]) {
     sc_signal<bool> reset;
 
     if (argc != 2) {
-        cerr << "Usage: " << "run" << " <cat|dog>.txt" << endl;
+        cerr << "Usage: ./run <cat|dog>" << endl;
         return 1;
     }
 

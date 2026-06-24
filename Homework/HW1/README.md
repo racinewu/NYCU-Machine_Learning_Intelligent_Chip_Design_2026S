@@ -1,4 +1,4 @@
-# SystemC Implementation of AlexNet
+# Implementation of AlexNet in SystemC
 AlexNet is a deep convolutional neural network originally designed for large-scale image classification. This project implements the full forward pass of AlexNet using SystemC, simulating the computation of each layer in software to verify correctness against a pre-trained PyTorch model.
 
 ## Problem Formulation
@@ -59,7 +59,7 @@ Dog
 ```
 HW1/
   ├── code
-  │   ├── 09_SUMIT
+  │   ├── 09_SUBMIT
   │   │   ├── 00_tar               // Pack source files into .tar.gz
   │   │   ├── 01_sumit             // Submit and auto-verify on TA server
   │   │   ├── 02_check             // Confirm submission result
