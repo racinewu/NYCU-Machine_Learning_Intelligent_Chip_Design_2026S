@@ -13,23 +13,28 @@ Lecturer: 陳坤志 Kun-Chih Chen
 - Intro
 - SystemC Overview and Datatype
 - Module
-
+- Channel and Interface
+- Fundamental of DNN Accelerator Design
+- Systolic Architecture Design
+- Introduction to Network on Chip
+- SoC Overview
+- On-chip Communication Protocol
 
 
 ## Homework
-- HW1 [README](/Homework/HW1/README.md)
-- HW2 [README](/Homework/HW2/README.md)
-- HW3 [README](/Homework/HW3/README.md)
-- HW4 [README](/Homework/HW4/README.md)
+- HW1 Implementation of AlexNet in SystemC [README](/Homework/HW1/)
+- HW2 Channels and Interfaces in SystemC [README](/Homework/HW2/)
+- HW3 Implement NoC by SystemC [README](/Homework/HW3/)
+- HW4 NoC-based CNN architecture [README](/Homework/HW4/)
 
 ## Lab
-- Lab0  [README](/Lab/Lab0/)
-- Lab1  [README](/Lab/Lab1/README.md)
-- Lab2  [README](/Lab/Lab2/README.md)
-- Lab3  [README](/Lab/Lab3/README.md)
+- Lab0 SystemC Environment [README](/Lab/Lab0/)
+- Lab1 Port-to-Port Communication [README](/Lab/Lab1/)
+- Lab2 AXI-Stream Forwarding [README](/Lab/Lab2/)
+- Lab3 DMA [README](/Lab/Lab3/)
 
-## Final Porject
-Porject name
+## Final Project
+NoC-based CNN Accelerator System with AXI4 DMA Architecture & Design Optimization [README](Final_Project/)
 
 ## Environment
 - OS: CentOS 7.9.2009
