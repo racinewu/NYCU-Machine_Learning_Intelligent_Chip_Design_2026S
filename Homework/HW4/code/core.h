@@ -11,7 +11,7 @@
 #include <cmath>
 #include <algorithm>
 
-// ============================================================
+// ==================================================
 // Core assignment (Controller at Router 0, Cores 1-15 at Routers 1-15):
 //
 //   Core 1-4  : Conv1 (16 out-ch each) + Conv2-5 + FC6 + FC7
@@ -30,7 +30,7 @@
 //
 // All weights arrive via NoC from Controller (which reads ROM).
 // No direct file I/O in Core.
-// ============================================================
+// ==================================================
 
 SC_MODULE(Core) {
     sc_in  <bool>       rst;
@@ -74,9 +74,9 @@ SC_MODULE(Core) {
         // No direct file I/O here.
     }
 
-    // ============================================================
+    // ==================================================
     // PE compute functions (no file I/O)
-    // ============================================================
+    // ==================================================
 
     // Conv1: receive [image(3*224*224) | weight(16*3*11*11) | bias(16)]
     // Output: [16][27][27] after pool1
@@ -289,9 +289,9 @@ SC_MODULE(Core) {
         return out;
     }
 
-    // ============================================================
+    // ==================================================
     // NI: enqueue outgoing tiles
-    // ============================================================
+    // ==================================================
     void ni_send(int dest, int pkt_type, int ch_start,
                  const std::vector<float>& datas) {
         int total=(int)datas.size();
@@ -312,9 +312,9 @@ SC_MODULE(Core) {
         tx_ready.notify();
     }
 
-    // ============================================================
+    // ==================================================
     // TX thread
-    // ============================================================
+    // ==================================================
     void tx_thread() {
         req_tx.write(0); flit_tx.write(0);
         while (true) {
@@ -328,10 +328,10 @@ SC_MODULE(Core) {
         }
     }
 
-    // ============================================================
+    // ==================================================
     // NI RX thread: receive flits, assemble tiles, push to compute_queue.
     // No computation here — pure protocol handling.
-    // ============================================================
+    // ==================================================
     void rx_thread() {
         ack_rx.write(0);
         std::map<int, std::map<int,std::vector<float>>> bufs;
@@ -396,10 +396,10 @@ SC_MODULE(Core) {
         return 0;
     }
 
-    // ============================================================
-    // PE compute thread: pop from compute_queue, run NN computation,
-    // push results to tx_queue. No flit handling here.
-    // ============================================================
+    // ==================================================
+    // PE compute thread: pop from compute_queue, run NN computation, then push results to tx_queue.
+    // No flit handling here.
+    // ==================================================
     void compute_thread() {
         while (true) {
             if (compute_queue.empty()) wait(compute_ready);
@@ -411,7 +411,7 @@ SC_MODULE(Core) {
             int cs    = job.ch_start;
             std::vector<float>& flat = job.payload;
 
-            // --- Conv1 ---
+            // Conv1
             if (ptype == PKT_CONV1_IN && core_id >= 0 && core_id <= 3) {
                 std::vector<float> out;
                 do_conv1(flat, out);
@@ -421,7 +421,7 @@ SC_MODULE(Core) {
                     << "-" << std::setw(3) << oc_start+15 << " done");
                 ni_send(CTRL_ID, PKT_CONV_OUT, oc_start, out);
 
-            // --- Conv2-5 ---
+            // Conv2-5
             } else if (ptype == PKT_CONV_IN) {
                 int layer    = (cs>>12)&0xF;
                 int oc_start = cs&0xFFF;
@@ -435,7 +435,7 @@ SC_MODULE(Core) {
                     << "-" << std::setw(3) << oc_start+ch_per-1 << " done");
                 ni_send(CTRL_ID, PKT_CONV_OUT, oc_start, out);
 
-            // --- FC weight preload ---
+            // FC weight preload
             } else if (ptype == PKT_FC_W) {
                 int round = cs;
                 int Nin   = (round==6)?9216:4096;
@@ -444,11 +444,11 @@ SC_MODULE(Core) {
                 if (round==6) {
                     fc6_w.assign(flat.begin(), flat.begin()+wsz);
                     fc6_b.assign(flat.begin()+wsz, flat.end());
-                    LOG2("[Core " << core_id << "] FC6 weights loaded (" << wsz << " floats)");
+                    LOG2("[Core " << std::setw(2) << core_id << "] FC6 weights loaded (" << wsz << " floats)");
                 } else if (round==7) {
                     fc7_w.assign(flat.begin(), flat.begin()+wsz);
                     fc7_b.assign(flat.begin()+wsz, flat.end());
-                    LOG2("[Core " << core_id << "] FC7 weights loaded (" << wsz << " floats)");
+                    LOG2("[Core " << std::setw(2) << core_id << "] FC7 weights loaded (" << wsz << " floats)");
                 } else if (round==8 && core_id==15) {
                     fc8_w.assign(flat.begin(), flat.begin()+wsz);
                     fc8_b.assign(flat.begin()+wsz, flat.end());
@@ -457,7 +457,7 @@ SC_MODULE(Core) {
                 // Send ack back to Controller so it knows weights are loaded
                 ni_send(CTRL_ID, PKT_FC_W, cs, std::vector<float>());
 
-            // --- FC6-7 inference ---
+            // FC6-7 inference
             } else if (ptype == PKT_FC_IN && core_id >= 0 && core_id <= (CORES_FC6-1)) {
                 int round = cs;
                 int Nout  = 4096/CORES_FC6;
@@ -475,7 +475,7 @@ SC_MODULE(Core) {
                 }
                 ni_send(CTRL_ID, PKT_FC_OUT, core_id*Nout, out);
 
-            // --- FC8 + Softmax ---
+            // FC8 + Softmax
             } else if (ptype == PKT_FC8_IN && core_id == 15) {
                 auto fc8_out = do_fc(fc8_w, fc8_b, flat, 1000, false);
                 auto sm_out  = do_softmax(fc8_out);

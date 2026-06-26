@@ -263,9 +263,7 @@ SC_MODULE(Controller) {
         layer_id.write(0); layer_id_type.write(false);
         while (rst.read()) wait(); wait();
 
-        // ============================================================
         // Read image
-        // ============================================================
         LOG1("[Ctrl] Reading image...");
         std::vector<float> image = rom_read(0, false);
         LOG1("[Ctrl] Image: " << shape3(3,224,224) << " = " << image.size() << " floats");
@@ -288,17 +286,17 @@ SC_MODULE(Controller) {
         auto fm6427 = assemble_conv1(r1, CORES_CONV1);
         LOG1("[Ctrl] Conv1+Pool1 done -> " << shape3(64,27,27));
 
-        // ---- Conv2-5 (1 round each, all 16 cores) ----
+        // Conv2-5 (1 round each, all 16 cores)
         auto fm19213 = run_conv(2, fm6427,  2, 192,  64, 5, 13, 13, CORES_CONV2, "Conv2+Pool2");
         auto fm38413 = run_conv(3, fm19213, 3, 384, 192, 3, 13, 13, CORES_CONV3, "Conv3");
         auto fm25613 = run_conv(4, fm38413, 4, 256, 384, 3, 13, 13, CORES_CONV4, "Conv4");
         auto flat9216= run_conv(5, fm25613, 5, 256, 256, 3,  6,  6, CORES_CONV5, "Conv5+Pool5");
 
-        // ============================================================
+        // ==================================================
         // FC weight preload: read from ROM then direct-inject into cores
         // Done sequentially after Conv5 to avoid ROM signal contention.
         // wait(cycles) advances simulation time by theoretical NoC TX time.
-        // ============================================================
+        // ==================================================
         LOG1("[Ctrl] FC6 reading weights from ROM...");
         fc6_w_cache = rom_read(6, false);
         fc6_b_cache = rom_read(6, true);
@@ -324,7 +322,7 @@ SC_MODULE(Controller) {
             LOG2("[Ctrl] FC6 weights received by all cores");
         }
 
-        // ---- FC6 inference ----
+        // FC6 inference
         LOG1("[Ctrl] FC6 inference (" << CORES_FC6 << " cores, WS)...");
         broadcast(CORES_FC6, PKT_FC_IN, 6, flat9216);
         auto rfc6 = gather(CORES_FC6, 4096/CORES_FC6);
@@ -356,7 +354,7 @@ SC_MODULE(Controller) {
             LOG2("[Ctrl] FC7 weights received by all cores");
         }
 
-        // ---- FC7 inference ----
+        // FC7 inference
         LOG1("[Ctrl] FC7 inference (" << CORES_FC7 << " cores, WS)...");
         broadcast(CORES_FC7, PKT_FC_IN, 7, fc6out);
         auto rfc7 = gather(CORES_FC7, 4096/CORES_FC7);
@@ -367,7 +365,7 @@ SC_MODULE(Controller) {
         fc8_w_cache = rom_read(8, false);
         fc8_b_cache = rom_read(8, true);
 
-        // ---- FC8+Softmax: send weights to Core CORE_FC8 via NoC ----
+        // FC8+Softmax: send weights to Core CORE_FC8 via NoC
         LOG1("[Ctrl] FC8+Softmax @ Core " << CORE_FC8 << "...");
         {
             std::vector<float> payload;

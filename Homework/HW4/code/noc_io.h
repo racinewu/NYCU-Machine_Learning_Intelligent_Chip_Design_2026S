@@ -11,10 +11,10 @@ inline int n_tiles(int floats) {
     return (floats + TILE_SIZE - 1) / TILE_SIZE;
 }
 
-// -------------------------------------------------------
+// ==================================================
 // 4-phase handshake: send one flit (wide version)
 // Optimized: no trailing wait() after ack deasserts.
-// -------------------------------------------------------
+// ==================================================
 template<typename F, typename R, typename A>
 inline void noc_send_flit(sc_lv<FLIT_WIDTH> f, F& flit_tx, R& req_tx, A& ack_tx) {
     req_tx.write(1); flit_tx.write(f);
@@ -23,10 +23,10 @@ inline void noc_send_flit(sc_lv<FLIT_WIDTH> f, F& flit_tx, R& req_tx, A& ack_tx)
     while (ack_tx.read() == 1) sc_core::wait();
 }
 
-// -------------------------------------------------------
+// ==================================================
 // Send one packet.
 // Data flits now carry FLOATS_PER_FLIT floats each.
-// -------------------------------------------------------
+// ==================================================
 template<typename F, typename R, typename A>
 inline void noc_send_packet(int dest, int src,
                              int pkt_type, int ch_start, int tile_idx,
@@ -35,12 +35,12 @@ inline void noc_send_packet(int dest, int src,
     noc_send_flit(make_header(dest, src), flit_tx, req_tx, ack_tx);
     if (datas.empty()) {
         sc_lv<FLIT_WIDTH> m = make_meta(pkt_type, ch_start);
-        m.range(129,128) = FLIT_TAIL;
+        m.range(TYPE_HI, TYPE_LO) = FLIT_TAIL;
         noc_send_flit(m, flit_tx, req_tx, ack_tx);
         return;
     }
     noc_send_flit(make_meta(pkt_type, ch_start),  flit_tx, req_tx, ack_tx);
-    noc_send_flit(make_tile_hdr(tile_idx),         flit_tx, req_tx, ack_tx);
+    noc_send_flit(make_tile_hdr(tile_idx),        flit_tx, req_tx, ack_tx);
 
     int total = (int)datas.size();
     // Send FLOATS_PER_FLIT floats per flit
@@ -52,9 +52,7 @@ inline void noc_send_packet(int dest, int src,
     }
 }
 
-// -------------------------------------------------------
 // Send large vector in tiles of TILE_SIZE
-// -------------------------------------------------------
 template<typename F, typename R, typename A>
 inline void noc_send_tiled(int dest, int src, int pkt_type, int ch_start,
                             const std::vector<float>& datas,
@@ -68,11 +66,11 @@ inline void noc_send_tiled(int dest, int src, int pkt_type, int ch_start,
     }
 }
 
-// -------------------------------------------------------
+// ==================================================
 // Receive one complete packet (blocks until tail flit).
 // Extracts FLOATS_PER_FLIT floats from each data flit.
 // Optimized: no trailing wait() at loop bottom.
-// -------------------------------------------------------
+// ==================================================
 template<typename F, typename R, typename A>
 inline Packet* noc_recv_packet(F& flit_rx, R& req_rx, A& ack_rx) {
     Packet* p = nullptr;
@@ -85,21 +83,21 @@ inline Packet* noc_recv_packet(F& flit_rx, R& req_rx, A& ack_rx) {
         while (req_rx.read() == 1) sc_core::wait();
         ack_rx.write(0);
 
-        int ftype = f.range(129,128).to_uint();
+        int ftype = f.range(TYPE_HI, TYPE_LO).to_uint();
 
         if (ftype == FLIT_HEAD) {
             delete p;
             p = new Packet();
-            p->dest_id   = f.range(127,112).to_uint();
-            p->source_id = f.range(111, 96).to_uint();
+            p->dest_id   = f.range(HDR_DEST_HI, HDR_DEST_LO).to_uint();
+            p->source_id = f.range(HDR_SRC_HI, HDR_SRC_LO).to_uint();
             state = 1;
         } else if (state == 1) {
-            p->pkt_type = f.range(127,120).to_uint();
-            p->ch_start = f.range(119,104).to_uint();
+            p->pkt_type = f.range(META_TYPE_HI, META_TYPE_LO).to_uint();
+            p->ch_start = f.range(META_CH_HI, META_CH_LO).to_uint();
             if (ftype == FLIT_TAIL) return p;
             state = 2;
         } else if (state == 2) {
-            p->tile_idx = f.range(127,112).to_uint();
+            p->tile_idx = f.range(TILE_IDX_HI, TILE_IDX_LO).to_uint();
             state = 3;
         } else if (state == 3 && p) {
             // Extract up to FLOATS_PER_FLIT floats
@@ -109,7 +107,6 @@ inline Packet* noc_recv_packet(F& flit_rx, R& req_rx, A& ack_rx) {
                 p->datas.push_back(tmp[i]);
             if (ftype == FLIT_TAIL) return p;
         }
-        // No trailing wait() -- loop back immediately
     }
 }
 
