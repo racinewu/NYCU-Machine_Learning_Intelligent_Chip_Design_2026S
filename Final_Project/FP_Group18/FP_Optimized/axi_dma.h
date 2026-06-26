@@ -1,7 +1,7 @@
 #ifndef AXI_DMA_H
 #define AXI_DMA_H
 
-// ============================================================
+// ==================================================
 // AXI4-based DMA Model (Optimized)
 //
 // Two independent AXI4 master ports:
@@ -26,7 +26,7 @@
 // Burst type: INCR (ARBURST/AWBURST = 01)
 // Beat size : ARSIZE/AWSIZE = 010 (4 bytes)
 // Outstanding: not supported (baseline behavior per port)
-// ============================================================
+// ==================================================
 
 #include "dram.h"
 #include "systemc.h"
@@ -41,9 +41,9 @@
 #define AXI_RESP_OKAY   0x0u
 #define AXI_SIZE_4B     0x2u
 
-// ============================================================
+// ==================================================
 // AXI4_Port: one complete set of AXI4 channels (one master port)
-// ============================================================
+// ==================================================
 struct AXI4_Port {
     // AR channel
     sc_signal<unsigned int> ARADDR;
@@ -153,9 +153,9 @@ struct AXI4_Port {
     }
 };
 
-// ============================================================
+// ==================================================
 // AXI4_DMA: two independent ports (main + prefetch)
-// ============================================================
+// ==================================================
 SC_MODULE(AXI4_DMA) {
 
     // Port 0: main (logic_thread)
@@ -169,9 +169,9 @@ SC_MODULE(AXI4_DMA) {
     long long p0_ar = 0, p0_r = 0, p0_aw = 0, p0_w = 0, p0_b = 0;
     long long p1_ar = 0, p1_r = 0;  // prefetch port: read only
 
-    // -------------------------------------------------------
+    // ==================================================
     // Port 0 interface (logic_thread)
-    // -------------------------------------------------------
+    // ==================================================
     std::vector<float> read(unsigned int addr, int n) {
         return port0.read(dram_, addr, n, p0_ar, p0_r);
     }
@@ -182,16 +182,16 @@ SC_MODULE(AXI4_DMA) {
         write(addr, v.data(), (int)v.size());
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // Port 1 interface (prefetch_thread) — read only
-    // -------------------------------------------------------
+    // ==================================================
     std::vector<float> prefetch_read(unsigned int addr, int n) {
         return port1.read(dram_, addr, n, p1_ar, p1_r);
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // Statistics
-    // -------------------------------------------------------
+    // ==================================================
     void reset_stats() {
         p0_ar = p0_r = p0_aw = p0_w = p0_b = 0;
         p1_ar = p1_r = 0;

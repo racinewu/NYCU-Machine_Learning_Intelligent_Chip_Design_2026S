@@ -1,7 +1,7 @@
 #ifndef CONTROLLER_H
 #define CONTROLLER_H
 
-// ============================================================
+// ==================================================
 // FP Baseline Controller
 //
 // Changes from new HW4 controller:
@@ -14,7 +14,7 @@
 //   6. No set_cores() / no direct core pointer access.
 //      FC weights sent via real NoC PKT_FC_W (same as new HW4).
 //   7. Execution cycle counter added for report metrics.
-// ============================================================
+// ==================================================
 
 #include "systemc.h"
 #include "noc_io.h"
@@ -43,9 +43,9 @@ SC_MODULE(Controller) {
     sc_in  <bool>              req_rx;
     sc_out <bool>              ack_rx;
 
-    // -------------------------------------------------------
+    // ==================================================
     // Memory subsystem
-    // -------------------------------------------------------
+    // ==================================================
     DRAM*     dram_;
     AXI4_DMA* dma_;    // SC_MODULE, owned by controller
     SRAM*     sram_;   // 2 MB on-chip staging buffer
@@ -74,9 +74,9 @@ SC_MODULE(Controller) {
     // Execution cycle counter
     long long exec_cycles_ = 0;
 
-    // -------------------------------------------------------
+    // ==================================================
     // TX / RX infrastructure (identical to new HW4)
-    // -------------------------------------------------------
+    // ==================================================
     std::queue<Packet*> tx_q;
     sc_event            tx_ready;
     std::queue<Packet*> rx_q;
@@ -156,7 +156,7 @@ SC_MODULE(Controller) {
         return res;
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // DMA helpers: DRAM <-> SRAM <-> vector
     //
     // dma_read / dma_write always stage through SRAM.
@@ -168,7 +168,7 @@ SC_MODULE(Controller) {
     //   If fm > SRAM:       spill to DRAM intermediate region.
     // This models real HW behavior: small buffers stay on-chip,
     // large feature maps must be written back to DRAM.
-    // -------------------------------------------------------
+    // ==================================================
     std::vector<float> dma_read(unsigned int dram_addr, int n_floats) {
         int cap = sram_->capacity();
         std::vector<float> result;
@@ -199,9 +199,9 @@ SC_MODULE(Controller) {
         }
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // Feature map spill management
-    // -------------------------------------------------------
+    // ==================================================
     unsigned int inter_offset_ = 0;  // next free byte in DRAM_INTER_BASE
 
     struct FmHandle {
@@ -248,10 +248,10 @@ SC_MODULE(Controller) {
         return dma_read(h.dram_addr, n_floats);
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // init_dram: load data folder into DRAM before sc_start.
     // This is the ONLY place that reads files directly.
-    // -------------------------------------------------------
+    // ==================================================
     void init_dram(const std::string& data_path,
                    const std::string& image_file) {
         auto load = [&](const std::string& fname,
@@ -295,9 +295,9 @@ SC_MODULE(Controller) {
         LOG1("[DRAM] Initialization complete. Runtime stats reset.");
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // Assemble helpers (identical to new HW4)
-    // -------------------------------------------------------
+    // ==================================================
     std::vector<float> assemble_conv(
             std::map<int,std::vector<float>>& parts,
             int n_cores, int ch_per, int H, int W) {
@@ -337,9 +337,9 @@ SC_MODULE(Controller) {
         return out;
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // Print results (same format as HW4)
-    // -------------------------------------------------------
+    // ==================================================
     void print_results(const std::vector<float>& lin,
                        const std::vector<float>& sm) {
         std::vector<std::string> names;
@@ -375,9 +375,9 @@ SC_MODULE(Controller) {
         std::cout << "=================================================" << std::endl;
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // run_conv: same logic as new HW4 but reads from DRAM via DMA
-    // -------------------------------------------------------
+    // ==================================================
     std::vector<float> run_conv(int layer,
                                 const std::vector<float>& fm_in,
                                 unsigned int w_addr, unsigned int b_addr,
@@ -413,10 +413,10 @@ SC_MODULE(Controller) {
         return fm_out;
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // send_fc_weights: DMA load from DRAM, then send via NoC PKT_FC_W
     // Waits for ack from each core (same as new HW4).
-    // -------------------------------------------------------
+    // ==================================================
     void send_fc_weights(int round,
                          unsigned int w_addr, unsigned int b_addr,
                          int n_cores, int Nin, int Nout) {
@@ -445,9 +445,9 @@ SC_MODULE(Controller) {
         LOG2("[Ctrl] FC" << round << " weights received by all cores");
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // Main logic thread
-    // -------------------------------------------------------
+    // ==================================================
     void logic_thread() {
         while (rst.read()) wait(); wait();
 
@@ -462,17 +462,17 @@ SC_MODULE(Controller) {
         };
         std::vector<LayerTiming> timings;
 
-        // ============================================================
+        // ==================================================
         // Image: DMA load from DRAM
-        // ============================================================
+        // ==================================================
         LOG1("[Ctrl] Reading image from DRAM via DMA...");
         std::vector<float> image = dma_read(DRAM_IMAGE_BASE, 3*224*224);
         LOG1("[Ctrl] Image: " << shape3(3,224,224)
              << " = " << image.size() << " floats");
 
-        // ============================================================
+        // ==================================================
         // Conv1: DMA load weights, distribute to CORES_CONV1 cores
-        // ============================================================
+        // ==================================================
         LOG1("[Ctrl] Conv1+Pool1 DMA loading weights...");
         std::vector<float> c1w = dma_read(DRAM_C1W_BASE, 3*64*11*11);
         std::vector<float> c1b = dma_read(DRAM_C1B_BASE, 64);
@@ -500,10 +500,10 @@ SC_MODULE(Controller) {
         // fm6427: 64*27*27 = 46656 floats = 182 KB > 128 KB SRAM -> spill
         auto h_fm6427 = fm_store(fm6427_raw, "Conv1_out[64x27x27]");
 
-        // ============================================================
+        // ==================================================
         // Conv2-5: DMA loads weights from DRAM
         // Feature maps spill to DRAM if > SRAM capacity (128 KB)
-        // ============================================================
+        // ==================================================
         ts = (long long)sc_core::sc_time_stamp().value();
         auto fm6427   = fm_load(h_fm6427, 64*27*27);
         auto fm19213_raw = run_conv(2, fm6427,
@@ -540,9 +540,9 @@ SC_MODULE(Controller) {
         // flat9216: 9216 floats = 36 KB <= 128 KB SRAM -> on-chip
         auto h_flat9216 = fm_store(flat9216_raw, "Conv5_out[9216]");
 
-        // ============================================================
+        // ==================================================
         // FC6: DMA load weights -> NoC PKT_FC_W -> inference
-        // ============================================================
+        // ==================================================
         ts = (long long)sc_core::sc_time_stamp().value();
         send_fc_weights(6, DRAM_FC6W_BASE, DRAM_FC6B_BASE,
                         CORES_FC6, 9216, 4096/CORES_FC6);
@@ -557,9 +557,9 @@ SC_MODULE(Controller) {
         // fc6out: 4096 floats = 16 KB <= 128 KB SRAM -> on-chip
         auto h_fc6out = fm_store(fc6out_raw, "FC6_out[4096]");
 
-        // ============================================================
+        // ==================================================
         // FC7: DMA load weights -> NoC PKT_FC_W -> inference
-        // ============================================================
+        // ==================================================
         ts = (long long)sc_core::sc_time_stamp().value();
         send_fc_weights(7, DRAM_FC7W_BASE, DRAM_FC7B_BASE,
                         CORES_FC7, 4096, 4096/CORES_FC7);
@@ -574,9 +574,9 @@ SC_MODULE(Controller) {
         // fc7out: 4096 floats = 16 KB <= 128 KB SRAM -> on-chip
         auto h_fc7out = fm_store(fc7out_raw, "FC7_out[4096]");
 
-        // ============================================================
+        // ==================================================
         // FC8: DMA load weights -> NoC PKT_FC_W -> inference
-        // ============================================================
+        // ==================================================
         LOG1("[Ctrl] FC8 DMA loading weights from DRAM...");
         ts = (long long)sc_core::sc_time_stamp().value();
         {
@@ -603,10 +603,10 @@ SC_MODULE(Controller) {
                                result->datas.end());
         delete result;
 
-        // ============================================================
+        // ==================================================
         // Write output to DRAM before printing (spec requirement).
         // Layout: [0..999] = linear output (val), [1000..1999] = softmax probability
-        // ============================================================
+        // ==================================================
         LOG1("[Ctrl] Writing output results to DRAM [0x"
              << std::hex << DRAM_OUTPUT_BASE << std::dec << "]...");
         std::vector<float> out_buf;
@@ -620,9 +620,9 @@ SC_MODULE(Controller) {
         std::vector<float> lin_out(readback.begin(), readback.begin() + 1000);
         std::vector<float> sm_readback(readback.begin() + 1000, readback.end());
 
-        // ============================================================
+        // ==================================================
         // Print execution metrics
-        // ============================================================
+        // ==================================================
         long long t_end   = (long long)sc_core::sc_time_stamp().value();
         long long sim_ns  = (t_end - t_start) / 1000; // ps -> ns
         long long sim_cyc = sim_ns / CLK_PERIOD_NS;
@@ -640,33 +640,33 @@ SC_MODULE(Controller) {
 
         std::cout << std::endl;
         std::cout << "========= Execution Metrics (Baseline) =========" << std::endl;
-        std::cout << "  MAC per PE    : " << MAC_PER_PE << std::endl;
-        std::cout << "  Total MACs    : " << MAC_PER_PE * 16 << std::endl;
-        std::cout << "  On-chip SRAM  : 1 bank x 128 KB = 128 KB total" << std::endl;
-        std::cout << "  PE local SRAM : 0 KB (none)" << std::endl;
-        std::cout << "  SRAM bit width: 32 bits (1 float per access)" << std::endl;
-        std::cout << "  DRAM bit width: 32 bits (1 float per AXI beat)" << std::endl;
-        std::cout << "  Sim time      : " << sim_ns  << " ns" << std::endl;
-        std::cout << "  Sim cycles    : " << sim_cyc << " cycles" << std::endl;
+        std::cout << "MAC per PE    : " << MAC_PER_PE << std::endl;
+        std::cout << "Total MACs    : " << MAC_PER_PE * 16 << std::endl;
+        std::cout << "On-chip SRAM  : 1 bank x 128 KB = 128 KB total" << std::endl;
+        std::cout << "PE local SRAM : 0 KB (none)" << std::endl;
+        std::cout << "SRAM bit width: 32 bits (1 float per access)" << std::endl;
+        std::cout << "DRAM bit width: 32 bits (1 float per AXI beat)" << std::endl;
+        std::cout << "Sim time      : " << sim_ns  << " ns" << std::endl;
+        std::cout << "Sim cycles    : " << sim_cyc << " cycles" << std::endl;
         std::cout << std::fixed << std::setprecision(2);
-        std::cout << "  PE utilization: " << pe_util << "%" << std::endl;
+        std::cout << "PE utilization: " << pe_util << "%" << std::endl;
 
         // Per-layer time breakdown
         std::cout << std::endl;
-        std::cout << "  " << std::left  << std::setw(14) << "Layer"
+        std::cout << std::left  << std::setw(14) << "Layer"
                   << std::right << std::setw(12) << "Cycles"
                   << std::setw(10) << "Time(ns)"
                   << std::setw(10)  << "Time(%)"
                   << std::setw(8)  << "Cores"
                   << std::setw(10) << "PE util" << std::endl;
-        std::cout << "  " << std::string(64, '-') << std::endl;
+        std::cout << std::string(64, '-') << std::endl;
         for (auto& t : timings) {
             long long layer_ns  = (t.end - t.start) / 1000;
             long long layer_cyc = layer_ns / CLK_PERIOD_NS;
             double    pct       = (sim_ns > 0)
                 ? (double)layer_ns / sim_ns * 100.0 : 0.0;
             double layer_util = (double)t.active_cores / 16.0 * 100.0;
-            std::cout << "  " << std::left  << std::setw(14) << t.name
+            std::cout << std::left  << std::setw(14) << t.name
                       << std::right << std::setw(12) << layer_cyc
                       << std::setw(10) << layer_ns
                       << std::setw(9)  << pct << "%"

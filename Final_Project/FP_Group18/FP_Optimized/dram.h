@@ -1,7 +1,7 @@
 #ifndef DRAM_H
 #define DRAM_H
 
-// ============================================================
+// ==================================================
 // DRAM Memory Map (byte-addressed, 4 bytes per float)
 //
 //   Region          | Base Address  | Size (floats)
@@ -27,7 +27,7 @@
 //   Output          | 0x14000000    | 2000     (lin+softmax)
 //
 // Total: ~0x15000000 = 352 MB
-// ============================================================
+// ==================================================
 
 #include <vector>
 #include <cstring>
@@ -57,13 +57,13 @@
 #define DRAM_OUTPUT_BASE      0x14000000U
 #define DRAM_TOTAL_BYTES      0x15000000U   // 352 MB
 
-// ============================================================
+// ==================================================
 // DRAM behavior model:
 //   - Byte-addressable flat array
 //   - Burst access: read/write n floats at 4-byte aligned addr
 //   - Latency: modeled externally by AXI DMA beat counter
 //   - No port-level gate model (behavioral abstraction)
-// ============================================================
+// ==================================================
 class DRAM {
 public:
     DRAM() { mem_.resize(DRAM_TOTAL_BYTES, 0); }

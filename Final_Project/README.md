@@ -58,6 +58,84 @@ Each file stores values in plain text, one value per line, rounded to 6 decimal 
 Layout follows PyTorch's default order: `[out_ch][in_ch][kH][kW]` for weights, `[out_ch]` for biases.
 
 ### Output
+Baseline (simulation is about 30mins)
+```
+========= Execution Metrics (Baseline) =========
+MAC per PE    : 1
+Total MACs    : 16
+On-chip SRAM  : 1 bank x 128 KB = 128 KB total
+PE local SRAM : 0 KB (none)
+SRAM bit width: 32 bits (1 float per access)
+DRAM bit width: 32 bits (1 float per AXI beat)
+Sim time      : 1142659540 ns
+Sim cycles    : 114265954 cycles
+PE utilization: 54.42%
+
+Layer               Cycles  Time(ns)   Time(%)   Cores   PE util
+----------------------------------------------------------------
+Conv1+Pool1       18206569 182065690    15.93%    4/16    25.00%
+Conv2+Pool2        4301385  43013850     3.76%   16/16   100.00%
+Conv3              8196597  81965970     7.17%   16/16   100.00%
+Conv4             11271917 112719170     9.86%   16/16   100.00%
+Conv5+Pool5        2610653  26106530     2.28%   16/16   100.00%
+FC6               42559815 425598150    37.25%    8/16    50.00%
+FC7               18918215 189182150    16.56%    8/16    50.00%
+FC8+Softmax        8200803  82008030     7.18%    1/16     6.25%
+
+[DRAM] Read  volume : 234.25 MB (61408184 floats)
+[DRAM] Write volume : 612.56 KB (156816 floats)
+[AXI]  AR transactions : 1886
+[AXI]  R  data beats   : 61408184 (234.25 MB)
+[AXI]  AW transactions : 7
+[AXI]  W  data beats   : 156816 (612.56 KB)
+[AXI]  B  responses    : 7
+[AXI]  Avg read  ARLEN+1=32560.0 beats | Avg write AWLEN+1=22402.3 beats
+[SRAM] Read  volume : 234.85 MB (61565000 floats)
+[SRAM] Write volume : 234.85 MB (61565000 floats)
+[NoC]  Total flits transmitted : 54201180
+[NoC]  NoC utilization         : 0.59%
+[NoC]  Avg packet latency      : 20335.29 ns (2033 cycles)
+=================================================
+```
+
+Optimized (simulation is about 20mins)
+```
+========= Execution Metrics (Optimized) =========
+MAC per PE    : 16
+Total MACs    : 256
+PE local SRAM : 16 KB (4096 floats)
+On-chip SRAM  : 4 banks x 128 KB = 512 KB total
+SRAM bit width: 32 bits (1 float per access)
+DRAM bit width: 32 bits (1 float per AXI beat)
+Sim time      : 678407010 ns
+Sim cycles    : 67840701 cycles
+PE utilization: 92.06%
+
+Layer               Cycles  Time(ns)   Time(%)   Cores   PE util
+----------------------------------------------------------------
+Conv1+Pool1        1735444  17354440     2.56%    4/16    25.00%
+Conv2+Pool2        1259385  12593850     1.86%   16/16   100.00%
+Conv3              1625877  16258770     2.40%   16/16   100.00%
+Conv4              2510957  25109570     3.70%   16/16   100.00%
+Conv5+Pool5        1366493  13664930     2.01%   16/16   100.00%
+FC6               38062391 380623910    56.11%   16/16   100.00%
+FC7               16919351 169193510    24.94%   16/16   100.00%
+FC8+Softmax        4360803  43608030     6.43%    1/16     6.25%
+
+[DRAM] Read  volume : 233.66 MB (61253368 floats)
+[DRAM] Write volume : 7.81 KB (2000 floats)
+[AXI Port0] AR=278 R=7775992 (29.66 MB) AW=1 W=2000 (7.81 KB) B=1
+[AXI Port1] AR=1632 R=53477376 (204.00 MB) (prefetch port, read-only)
+[AXI Total] R=61253368 (233.66 MB) W=2000 (7.81 KB)
+[AXI Burst] Avg read  ARLEN+1=32069.8 beats | Avg write AWLEN+1=2000.0 beats
+[SRAM] Read  volume : 438.96 MB (115070536 floats)
+[SRAM] Write volume : 235.03 MB (61610568 floats)
+[NoC]  Total flits transmitted : 67975756
+[NoC]  NoC utilization         : 1.25%
+[NoC]  Avg packet latency      : 15493.43 ns (1549 cycles)
+=================================================
+```
+
 Cat
 ```
 Top 100 classes:

@@ -1,7 +1,7 @@
 #ifndef SRAM_H
 #define SRAM_H
 
-// ============================================================
+// ==================================================
 // On-chip SRAM Behavior Model
 //
 // Specification (Baseline):
@@ -24,7 +24,7 @@
 // With 128 KB SRAM, Conv1 output (182 KB), Conv3 output (254 KB),
 // Conv4 output (169 KB) all spill to DRAM. Conv2 (127 KB), Conv5
 // (36 KB), FC outputs (16 KB) stay on-chip.
-// ============================================================
+// ==================================================
 
 #include <vector>
 #include <cassert>

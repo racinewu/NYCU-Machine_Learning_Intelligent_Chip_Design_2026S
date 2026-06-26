@@ -1,7 +1,7 @@
 #ifndef SRAM_H
 #define SRAM_H
 
-// ============================================================
+// ==================================================
 // On-chip SRAM Behavior Model — FP_Optimized
 //
 // 4-bank design, 128 KB per bank, 512 KB total.
@@ -21,7 +21,7 @@
 // Key benefit: FC weight tile Ping-Pong overlaps DMA load with PE compute.
 // Each weight tile = 32768 floats = 128 KB = exactly one bank.
 // Bank independence eliminates read-write conflicts between threads.
-// ============================================================
+// ==================================================
 
 #include <vector>
 #include <cassert>

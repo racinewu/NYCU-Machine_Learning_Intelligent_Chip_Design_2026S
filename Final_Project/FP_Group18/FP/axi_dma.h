@@ -1,7 +1,7 @@
 #ifndef AXI_DMA_H
 #define AXI_DMA_H
 
-// ============================================================
+// ==================================================
 // AXI4-based DMA Model (Baseline)
 //
 // Implements AXI4 master with 5 independent channels.
@@ -32,11 +32,11 @@
 // Abstraction level:
 //   Behavioral (not gate-level). All sc_signal transitions
 //   are modeled correctly per AXI spec. No clock sensitivity
-//   — signals are driven synchronously within read()/write()
+//   - signals are driven synchronously within read()/write()
 //   calls from the controller's SC_THREAD.
 //
 // Outstanding transactions: NOT supported (baseline).
-// ============================================================
+// ==================================================
 
 #include "dram.h"
 #include "systemc.h"
@@ -54,9 +54,9 @@
 
 SC_MODULE(AXI4_DMA) {
 
-    // -------------------------------------------------------
-    // AR Channel (Read Address) — master drives, slave accepts
-    // -------------------------------------------------------
+    // ==================================================
+    // AR Channel (Read Address) - master drives, slave accepts
+    // ==================================================
     sc_signal<unsigned int> ARADDR;
     sc_signal<unsigned int> ARLEN;    // burst length - 1
     sc_signal<unsigned int> ARSIZE;   // 010 = 4 bytes/beat
@@ -64,18 +64,18 @@ SC_MODULE(AXI4_DMA) {
     sc_signal<bool>         ARVALID;  // master asserts
     sc_signal<bool>         ARREADY;  // slave asserts
 
-    // -------------------------------------------------------
-    // R Channel (Read Data) — slave drives, master accepts
-    // -------------------------------------------------------
+    // ==================================================
+    // R Channel (Read Data) - slave drives, master accepts
+    // ==================================================
     sc_signal<float>        RDATA;
     sc_signal<bool>         RLAST;
     sc_signal<bool>         RVALID;   // slave asserts
     sc_signal<bool>         RREADY;   // master asserts
     sc_signal<unsigned int> RRESP;    // 00 = OKAY
 
-    // -------------------------------------------------------
-    // AW Channel (Write Address) — master drives, slave accepts
-    // -------------------------------------------------------
+    // ==================================================
+    // AW Channel (Write Address) - master drives, slave accepts
+    // ==================================================
     sc_signal<unsigned int> AWADDR;
     sc_signal<unsigned int> AWLEN;
     sc_signal<unsigned int> AWSIZE;
@@ -83,24 +83,24 @@ SC_MODULE(AXI4_DMA) {
     sc_signal<bool>         AWVALID;
     sc_signal<bool>         AWREADY;
 
-    // -------------------------------------------------------
-    // W Channel (Write Data) — master drives, slave accepts
-    // -------------------------------------------------------
+    // ==================================================
+    // W Channel (Write Data) - master drives, slave accepts
+    // ==================================================
     sc_signal<float>        WDATA;
     sc_signal<bool>         WLAST;
     sc_signal<bool>         WVALID;
     sc_signal<bool>         WREADY;
 
-    // -------------------------------------------------------
-    // B Channel (Write Response) — slave drives, master accepts
-    // -------------------------------------------------------
+    // ==================================================
+    // B Channel (Write Response) - slave drives, master accepts
+    // ==================================================
     sc_signal<unsigned int> BRESP;
     sc_signal<bool>         BVALID;
     sc_signal<bool>         BREADY;
 
-    // -------------------------------------------------------
+    // ==================================================
     // Statistics
-    // -------------------------------------------------------
+    // ==================================================
     long long ar_count_  = 0;
     long long r_beats_   = 0;
     long long aw_count_  = 0;
@@ -109,7 +109,7 @@ SC_MODULE(AXI4_DMA) {
 
     DRAM* dram_;
 
-    // -------------------------------------------------------
+    // ==================================================
     // AXI Read Transaction
     //
     // AR phase:
@@ -122,11 +122,11 @@ SC_MODULE(AXI4_DMA) {
     //   Master asserts RREADY=1
     //   Handshake: both high -> data transferred
     //   Slave deasserts RVALID after each beat
-    // -------------------------------------------------------
+    // ==================================================
     std::vector<float> read(unsigned int addr, int n) {
         assert(n > 0);
 
-        // --- AR Channel: master drives ---
+        // AR Channel: master drives
         ARADDR.write(addr);
         ARLEN.write((unsigned)(n - 1));
         ARSIZE.write(AXI_SIZE_4B);
@@ -141,7 +141,7 @@ SC_MODULE(AXI4_DMA) {
         ARVALID.write(false);
         ARREADY.write(false);
 
-        // --- R Channel: slave drives data beats ---
+        // R Channel: slave drives data beats
         RREADY.write(true);   // master always ready
         RRESP.write(AXI_RESP_OKAY);
 
@@ -171,7 +171,7 @@ SC_MODULE(AXI4_DMA) {
         std::memcpy(out, v.data(), (size_t)n * sizeof(float));
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // AXI Write Transaction
     //
     // AW phase:
@@ -188,11 +188,11 @@ SC_MODULE(AXI4_DMA) {
     //   Slave sets BRESP=OKAY, BVALID=1
     //   Master asserts BREADY=1
     //   Handshake -> transaction complete
-    // -------------------------------------------------------
+    // ==================================================
     void write(unsigned int addr, const float* data, int n) {
         assert(n > 0);
 
-        // --- AW Channel ---
+        // AW Channel
         AWADDR.write(addr);
         AWLEN.write((unsigned)(n - 1));
         AWSIZE.write(AXI_SIZE_4B);
@@ -203,7 +203,7 @@ SC_MODULE(AXI4_DMA) {
         AWVALID.write(false);
         AWREADY.write(false);
 
-        // --- W Channel ---
+        // W Channel
         WREADY.write(true);    // slave always ready
         for (int beat = 0; beat < n; beat++) {
             unsigned int baddr = addr + (unsigned)(beat * 4);
@@ -218,7 +218,7 @@ SC_MODULE(AXI4_DMA) {
         }
         WREADY.write(false);
 
-        // --- B Channel ---
+        // B Channel
         BRESP.write(AXI_RESP_OKAY);
         BVALID.write(true);
         BREADY.write(true);    // master accepts response
@@ -231,9 +231,9 @@ SC_MODULE(AXI4_DMA) {
         write(addr, v.data(), (int)v.size());
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // Statistics
-    // -------------------------------------------------------
+    // ==================================================
     void reset_stats() {
         ar_count_ = r_beats_ = aw_count_ = w_beats_ = b_count_ = 0;
     }

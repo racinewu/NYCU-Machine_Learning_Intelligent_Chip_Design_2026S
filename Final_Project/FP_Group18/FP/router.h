@@ -5,8 +5,6 @@
 #include "pe.h"
 #include <queue>
 
-#define CTRL_ID 16
-
 SC_MODULE( Router ) {
     sc_in  < bool >  rst;
     sc_in  < bool >  clk;
@@ -88,10 +86,10 @@ SC_MODULE( Router ) {
             for (int i=0; i<5; i++) {
                 if (eb[i].empty()) continue;
                 sc_lv<FLIT_WIDTH> f = eb[i].front();
-                int type = f.range(129,128).to_uint();
+                int type = f.range(TYPE_HI, TYPE_LO).to_uint();
                 if (in_target[i] == -1) {
                     if (type == 2) {
-                        int dest = f.range(127,112).to_uint();
+                        int dest = f.range(HDR_DEST_HI, HDR_DEST_LO).to_uint();
                         in_target[i] = get_xy_route(dest);
                     } else { eb[i].pop(); continue; }
                 }
@@ -109,7 +107,7 @@ SC_MODULE( Router ) {
                 if (rc_q[i].empty()) continue;
                 RCEntry e = rc_q[i].front();
                 int tgt  = e.target;
-                int type = e.flit.range(129,128).to_uint();
+                int type = e.flit.range(TYPE_HI, TYPE_LO).to_uint();
                 if (out_owner[tgt] == -1) out_owner[tgt] = i;
                 else if (out_owner[tgt] != i) continue;
                 xb_q[tgt].push(e.flit);

@@ -1,7 +1,7 @@
 #ifndef CONTROLLER_H
 #define CONTROLLER_H
 
-// ============================================================
+// ==================================================
 // FP Baseline Controller
 //
 // Changes from new HW4 controller:
@@ -14,7 +14,7 @@
 //   6. No set_cores() / no direct core pointer access.
 //      FC weights sent via real NoC PKT_FC_W (same as new HW4).
 //   7. Execution cycle counter added for report metrics.
-// ============================================================
+// ==================================================
 
 #include "systemc.h"
 #include "noc_io.h"
@@ -43,9 +43,9 @@ SC_MODULE(Controller) {
     sc_in  <bool>              req_rx;
     sc_out <bool>              ack_rx;
 
-    // -------------------------------------------------------
+    // ==================================================
     // Memory subsystem
-    // -------------------------------------------------------
+    // ==================================================
     DRAM*     dram_;
     AXI4_DMA* dma_;
     SRAM*     sram_;   // 4-bank on-chip SRAM (512 KB total)
@@ -82,9 +82,9 @@ SC_MODULE(Controller) {
     // Execution cycle counter
     long long exec_cycles_ = 0;
 
-    // -------------------------------------------------------
+    // ==================================================
     // TX / RX infrastructure (identical to new HW4)
-    // -------------------------------------------------------
+    // ==================================================
     std::queue<Packet*> tx_q;
     sc_event            tx_ready;
     std::queue<Packet*> rx_q;
@@ -164,7 +164,7 @@ SC_MODULE(Controller) {
         return res;
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // DMA helpers: DRAM <-> SRAM (4-bank) <-> vector
     //
     // dma_read_to_bank : burst read DRAM -> specified SRAM bank
@@ -177,7 +177,7 @@ SC_MODULE(Controller) {
     // fm_store / fm_load: feature map management.
     //   Optimized SRAM = 512 KB total; all FMs fit on-chip.
     //   No DRAM spill in normal operation.
-    // -------------------------------------------------------
+    // ==================================================
     void dma_read_to_bank(unsigned int dram_addr, int n_floats, int bank) {
         int cap = sram_->bank_cap();
         int offset = 0;
@@ -220,12 +220,12 @@ SC_MODULE(Controller) {
         }
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // Ping-Pong prefetch thread (runs concurrently with logic_thread)
     // logic_thread: calls prefetch_start() -> fires prefetch_start_
     // prefetch_thread: DMA loads into pong bank -> fires prefetch_ready_
     // logic_thread: calls prefetch_finish() -> waits prefetch_ready_, swaps
-    // -------------------------------------------------------
+    // ==================================================
     void prefetch_thread() {
         while (true) {
             wait(prefetch_start_);
@@ -262,9 +262,9 @@ SC_MODULE(Controller) {
         return sram_->read(prefetch_bank_, 0, n);
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // Feature map spill management
-    // -------------------------------------------------------
+    // ==================================================
     unsigned int inter_offset_ = 0;  // next free byte in DRAM_INTER_BASE
 
     struct FmHandle {
@@ -311,10 +311,10 @@ SC_MODULE(Controller) {
         return dma_read(h.dram_addr, n_floats);
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // init_dram: load data folder into DRAM before sc_start.
     // This is the ONLY place that reads files directly.
-    // -------------------------------------------------------
+    // ==================================================
     void init_dram(const std::string& data_path,
                    const std::string& image_file) {
         auto load = [&](const std::string& fname,
@@ -358,9 +358,9 @@ SC_MODULE(Controller) {
         LOG1("[DRAM] Initialization complete. Runtime stats reset.");
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // Assemble helpers (identical to new HW4)
-    // -------------------------------------------------------
+    // ==================================================
     std::vector<float> assemble_conv(
             std::map<int,std::vector<float>>& parts,
             int n_cores, int ch_per, int H, int W) {
@@ -400,9 +400,9 @@ SC_MODULE(Controller) {
         return out;
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // Print results (same format as HW4)
-    // -------------------------------------------------------
+    // ==================================================
     void print_results(const std::vector<float>& lin,
                        const std::vector<float>& sm) {
         std::vector<std::string> names;
@@ -438,7 +438,7 @@ SC_MODULE(Controller) {
         std::cout << "=================================================" << std::endl;
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // run_conv: Conv layer execution with 4-bank SRAM
     //
     // Conv stage bank assignment:
@@ -451,7 +451,7 @@ SC_MODULE(Controller) {
     //   Conv3 output = 254KB > 128KB -> FM Ping-Pong not applicable.
     //   Weight tile DMA uses Bank 3 exclusively.
     //   FC stage uses Bank 1/2 Ping-Pong for weight tiles (see FC section).
-    // -------------------------------------------------------
+    // ==================================================
     std::vector<float> run_conv(int layer,
                                 const std::vector<float>& fm_in,
                                 unsigned int w_addr, unsigned int b_addr,
@@ -519,8 +519,8 @@ SC_MODULE(Controller) {
         return fm_out;
     }
 
-    // -------------------------------------------------------
-    // -------------------------------------------------------
+    // ==================================================
+    // ==================================================
     // send_fc_weights_tiled: FC weight loading with bank Ping-Pong
     //
     // FC stage bank assignment:
@@ -536,7 +536,7 @@ SC_MODULE(Controller) {
     //   3. Swap Bank 1/2 roles (ping-pong)
     //   4. DMA loads bias into Bank 3, send via NoC
     //   5. Wait for core ack
-    // -------------------------------------------------------
+    // ==================================================
     void send_fc_weights(int round,
                          unsigned int w_addr, unsigned int b_addr,
                          int n_cores, int Nin, int Nout) {
@@ -599,9 +599,9 @@ SC_MODULE(Controller) {
         LOG2("[Ctrl] FC" << round << " weights received by all cores");
     }
 
-    // -------------------------------------------------------
+    // ==================================================
     // Main logic thread
-    // -------------------------------------------------------
+    // ==================================================
     void logic_thread() {
         while (rst.read()) wait(); wait();
 
@@ -616,17 +616,17 @@ SC_MODULE(Controller) {
         };
         std::vector<LayerTiming> timings;
 
-        // ============================================================
+        // ==================================================
         // Image: DMA load from DRAM
-        // ============================================================
+        // ==================================================
         LOG1("[Ctrl] Reading image from DRAM via DMA...");
         std::vector<float> image = dma_read(DRAM_IMAGE_BASE, 3*224*224);
         LOG1("[Ctrl] Image: " << shape3(3,224,224)
              << " = " << image.size() << " floats");
 
-        // ============================================================
+        // ==================================================
         // Conv1: DMA load weights, distribute to CORES_CONV1 cores
-        // ============================================================
+        // ==================================================
         LOG1("[Ctrl] Conv1+Pool1 DMA loading weights...");
         std::vector<float> c1w = dma_read(DRAM_C1W_BASE, 3*64*11*11);
         std::vector<float> c1b = dma_read(DRAM_C1B_BASE, 64);
@@ -679,7 +679,7 @@ SC_MODULE(Controller) {
         // fm6427: 64*27*27 = 46656 floats = 182 KB < 512 KB SRAM -> on-chip
         auto h_fm6427 = fm_store(fm6427_raw, "Conv1_out[64x27x27]");
 
-        // ============================================================
+        // ==================================================
         // Conv2-5: Ping-Pong DMA design
         // The 4-bank SRAM supports concurrent DMA prefetch and PE compute.
         // In this implementation, Ping-Pong is used for FM on-chip buffering:
@@ -689,6 +689,7 @@ SC_MODULE(Controller) {
         // (32768 floats), so weight loading uses chunked send_fc_weights.
         // Conv weight tiles for Conv3-5 also exceed one bank; Conv2 fits
         // but the overlap benefit is minimal vs. implementation complexity.
+        // ==================================================
 
         ts = (long long)sc_core::sc_time_stamp().value();
         auto fm6427   = fm_load(h_fm6427, 64*27*27);
@@ -723,12 +724,12 @@ SC_MODULE(Controller) {
         timings.push_back({"Conv5+Pool5", ts, (long long)sc_core::sc_time_stamp().value(), CORES_CONV5});
         auto h_flat9216 = fm_store(flat9216_raw, "Conv5_out[9216]");
 
-        // ============================================================
+        // ==================================================
         // FC6: Ping-Pong weight tiling + inference
         // Bank 0: input activation (flat9216, locked)
         // Bank 1/2: weight tile Ping-Pong (DMA/PE overlap)
         // Bank 3: bias buffer
-        // ============================================================
+        // ==================================================
         ts = (long long)sc_core::sc_time_stamp().value();
         auto flat9216 = fm_load(h_flat9216, 9216);
         sram_->write(SRAM_BANK_INPUT_PING, 0, flat9216);
@@ -743,10 +744,10 @@ SC_MODULE(Controller) {
         timings.push_back({"FC6", ts, (long long)sc_core::sc_time_stamp().value(), CORES_FC6});
         auto h_fc6out = fm_store(fc6out_raw, "FC6_out[4096]");
 
-        // ============================================================
+        // ==================================================
         // FC7: Ping-Pong weight tiling + inference
         // Bank 0: fc6out locked (4096 floats, 16 KB)
-        // ============================================================
+        // ==================================================
         ts = (long long)sc_core::sc_time_stamp().value();
         auto fc6out = fm_load(h_fc6out, 4096);
         sram_->write(SRAM_BANK_INPUT_PING, 0, fc6out);
@@ -761,10 +762,10 @@ SC_MODULE(Controller) {
         timings.push_back({"FC7", ts, (long long)sc_core::sc_time_stamp().value(), CORES_FC7});
         auto h_fc7out = fm_store(fc7out_raw, "FC7_out[4096]");
 
-        // ============================================================
+        // ==================================================
         // FC8: weight load + inference
         // Bank 0: fc7out locked (4096 floats, 16 KB)
-        // ============================================================
+        // ==================================================
         LOG1("[Ctrl] FC8 DMA loading weights from DRAM...");
         ts = (long long)sc_core::sc_time_stamp().value();
         auto fc7out = fm_load(h_fc7out, 4096);
@@ -792,10 +793,10 @@ SC_MODULE(Controller) {
                                result->datas.end());
         delete result;
 
-        // ============================================================
+        // ==================================================
         // Write output to DRAM before printing (spec requirement).
         // Layout: [0..999] = linear output (val), [1000..1999] = softmax probability
-        // ============================================================
+        // ==================================================
         LOG1("[Ctrl] Writing output results to DRAM [0x"
              << std::hex << DRAM_OUTPUT_BASE << std::dec << "]...");
         std::vector<float> out_buf;
@@ -809,18 +810,18 @@ SC_MODULE(Controller) {
         std::vector<float> lin_out(readback.begin(), readback.begin() + 1000);
         std::vector<float> sm_readback(readback.begin() + 1000, readback.end());
 
-        // ============================================================
+        // ==================================================
         // Print execution metrics
-        // ============================================================
+        // ==================================================
         long long t_end   = (long long)sc_core::sc_time_stamp().value();
         long long sim_ns  = (t_end - t_start) / 1000; // ps -> ns
         long long sim_cyc = sim_ns / CLK_PERIOD_NS;
 
-        // ============================================================
+        // ==================================================
         // PE utilization: weighted average across layers
         // overall = Σ(layer_cycles × active_cores) / (sim_cycles × 16)
         // This correctly weights layers by their duration and core count.
-        // ============================================================
+        // ==================================================
         long long weighted_core_cycles = 0;
         for (auto& t : timings) {
             long long layer_ns  = (t.end - t.start) / 1000;
@@ -833,30 +834,30 @@ SC_MODULE(Controller) {
 
         std::cout << std::endl;
         std::cout << "========= Execution Metrics (Optimized) =========" << std::endl;
-        std::cout << "  MAC per PE    : " << MAC_PER_PE << std::endl;
-        std::cout << "  Total MACs    : " << MAC_PER_PE * 16 << std::endl;
-        std::cout << "  PE local SRAM : " << LOCAL_SRAM_FLOATS * 4 / 1024
+        std::cout << "MAC per PE    : " << MAC_PER_PE << std::endl;
+        std::cout << "Total MACs    : " << MAC_PER_PE * 16 << std::endl;
+        std::cout << "PE local SRAM : " << LOCAL_SRAM_FLOATS * 4 / 1024
                   << " KB (" << LOCAL_SRAM_FLOATS << " floats)" << std::endl;
-        std::cout << "  On-chip SRAM  : " << SRAM_NUM_BANKS << " banks x "
+        std::cout << "On-chip SRAM  : " << SRAM_NUM_BANKS << " banks x "
                   << SRAM_BANK_FLOATS * 4 / 1024 << " KB = "
                   << SRAM_NUM_BANKS * SRAM_BANK_FLOATS * 4 / 1024
                   << " KB total" << std::endl;
-        std::cout << "  SRAM bit width: 32 bits (1 float per access)" << std::endl;
-        std::cout << "  DRAM bit width: 32 bits (1 float per AXI beat)" << std::endl;
-        std::cout << "  Sim time      : " << sim_ns  << " ns" << std::endl;
-        std::cout << "  Sim cycles    : " << sim_cyc << " cycles" << std::endl;
+        std::cout << "SRAM bit width: 32 bits (1 float per access)" << std::endl;
+        std::cout << "DRAM bit width: 32 bits (1 float per AXI beat)" << std::endl;
+        std::cout << "Sim time      : " << sim_ns  << " ns" << std::endl;
+        std::cout << "Sim cycles    : " << sim_cyc << " cycles" << std::endl;
         std::cout << std::fixed << std::setprecision(2);
-        std::cout << "  PE utilization: " << pe_util << "%" << std::endl;
+        std::cout << "PE utilization: " << pe_util << "%" << std::endl;
 
         // Per-layer time breakdown with active cores and layer-level PE utilization
         std::cout << std::endl;
-        std::cout << "  " << std::left  << std::setw(14) << "Layer"
+        std::cout << std::left  << std::setw(14) << "Layer"
                   << std::right << std::setw(12) << "Cycles"
                   << std::setw(10) << "Time(ns)"
                   << std::setw(10) << "Time(%)"
                   << std::setw(8)  << "Cores"
                   << std::setw(10) << "PE util" << std::endl;
-        std::cout << "  " << std::string(64, '-') << std::endl;
+        std::cout << std::string(64, '-') << std::endl;
         for (auto& t : timings) {
             long long layer_ns  = (t.end - t.start) / 1000;
             long long layer_cyc = layer_ns / CLK_PERIOD_NS;
@@ -865,7 +866,7 @@ SC_MODULE(Controller) {
             // Layer PE util = active_cores / 16
             // Each active core is ~100% busy during its compute window
             double layer_util = (double)t.active_cores / 16.0 * 100.0;
-            std::cout << "  " << std::left  << std::setw(14) << t.name
+            std::cout << std::left  << std::setw(14) << t.name
                       << std::right << std::setw(12) << layer_cyc
                       << std::setw(10) << layer_ns
                       << std::setw(9)  << pct << "%"

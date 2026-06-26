@@ -12,12 +12,12 @@
 #include <cmath>
 #include <algorithm>
 
-// ============================================================
+// ==================================================
 // LocalSRAM: per-PE partial sum buffer (Output Stationary)
 // Capacity set by LOCAL_SRAM_FLOATS in config.h (16 KB = 4096 floats).
 // Change LOCAL_SRAM_FLOATS to resize all PE local SRAMs at once.
 // Tracks read/write counts for PE utilization reporting.
-// ============================================================
+// ==================================================
 class LocalSRAM {
 public:
     explicit LocalSRAM(int cap = LOCAL_SRAM_FLOATS)
@@ -53,7 +53,7 @@ private:
     long long write_count_ = 0;
 };
 
-// ============================================================
+// ==================================================
 // Core assignment (Optimized):
 //
 //   All 16 cores used for Conv1-5, FC6, FC7.
@@ -64,7 +64,7 @@ private:
 //   MAC units : 16 per PE  [OPT: was 1]
 //   Local SRAM: 16 KB (4096 floats) for partial sum buffer
 //   Dataflow  : Output Stationary (Conv), Weight Stationary (FC)
-// ============================================================
+// ==================================================
 
 SC_MODULE(Core) {
     sc_in  <bool>       rst;
@@ -112,9 +112,9 @@ SC_MODULE(Core) {
         data_dir = dir;
     }
 
-    // ============================================================
+    // ==================================================
     // PE compute functions
-    // ============================================================
+    // ==================================================
 
     // Conv1: receive [image(3*224*224) | weight(16*3*11*11) | bias(16)]
     // Output: [16][27][27] after pool1
@@ -327,9 +327,9 @@ SC_MODULE(Core) {
         return out;
     }
 
-    // ============================================================
+    // ==================================================
     // NI: enqueue outgoing tiles
-    // ============================================================
+    // ==================================================
     void ni_send(int dest, int pkt_type, int ch_start,
                  const std::vector<float>& datas) {
         int total=(int)datas.size();
@@ -350,9 +350,9 @@ SC_MODULE(Core) {
         tx_ready.notify();
     }
 
-    // ============================================================
+    // ==================================================
     // TX thread
-    // ============================================================
+    // ==================================================
     void tx_thread() {
         req_tx.write(0); flit_tx.write(0);
         while (true) {
@@ -366,10 +366,10 @@ SC_MODULE(Core) {
         }
     }
 
-    // ============================================================
+    // ==================================================
     // NI RX thread: receive flits, assemble tiles, push to compute_queue.
     // No computation here — pure protocol handling.
-    // ============================================================
+    // ==================================================
     void rx_thread() {
         ack_rx.write(0);
         std::map<int, std::map<int,std::vector<float>>> bufs;
@@ -434,10 +434,10 @@ SC_MODULE(Core) {
         return 0;
     }
 
-    // ============================================================
+    // ==================================================
     // PE compute thread: pop from compute_queue, run NN computation,
     // push results to tx_queue. No flit handling here.
-    // ============================================================
+    // ==================================================
     void compute_thread() {
         while (true) {
             if (compute_queue.empty()) wait(compute_ready);
@@ -449,7 +449,7 @@ SC_MODULE(Core) {
             int cs    = job.ch_start;
             std::vector<float>& flat = job.payload;
 
-            // --- Conv1 ---
+            // Conv1
             if (ptype == PKT_CONV1_IN && core_id >= 0 && core_id <= 3) {
                 // MAC latency: Cout=16, Cin=3, K=11, Hout=55, Wout=55
                 // [OPT] 16 MACs/PE: cycles / 16
@@ -469,7 +469,7 @@ SC_MODULE(Core) {
                     << "-" << std::setw(3) << oc_start+15 << " done");
                 ni_send(CTRL_ID, PKT_CONV_OUT, oc_start, out);
 
-            // --- Conv2-5 ---
+            // Conv2-5
             } else if (ptype == PKT_CONV_IN) {
                 int layer    = (cs>>12)&0xF;
                 int oc_start = cs&0xFFF;
@@ -505,7 +505,7 @@ SC_MODULE(Core) {
                     << "-" << std::setw(3) << oc_start+ch_per-1 << " done");
                 ni_send(CTRL_ID, PKT_CONV_OUT, oc_start, out);
 
-            // --- FC weight preload ---
+            // FC weight preload
             } else if (ptype == PKT_FC_W) {
                 int round = cs;
                 int Nin   = (round==6)?9216:4096;
@@ -527,7 +527,7 @@ SC_MODULE(Core) {
                 }
                 ni_send(CTRL_ID, PKT_FC_W, cs, std::vector<float>());
 
-            // --- FC6-7 inference ---
+            // FC6-7 inference
             // [OPT] CORES_FC6=16, all cores 0-15 participate
             } else if (ptype == PKT_FC_IN && core_id >= 0 && core_id <= (CORES_FC6-1)) {
                 int round = cs;
@@ -555,7 +555,7 @@ SC_MODULE(Core) {
                 }
                 ni_send(CTRL_ID, PKT_FC_OUT, core_id*Nout, out);
 
-            // --- FC8 + Softmax ---
+            // FC8 + Softmax
             } else if (ptype == PKT_FC8_IN && core_id == 15) {
                 // [OPT] 16 MACs/PE
                 {

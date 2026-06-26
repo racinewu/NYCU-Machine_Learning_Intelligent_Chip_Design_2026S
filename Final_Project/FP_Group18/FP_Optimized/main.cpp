@@ -71,15 +71,15 @@ int sc_main(int argc, char* argv[])
     const char* env_file = std::getenv("IMAGE_FILE_NAME");
     std::string image_file = (env_file != NULL) ? env_file : "cat.txt";
 
-    // -------------------------------------------------------
+    // ==================================================
     // Init DRAM from data folder BEFORE sc_start.
     // After this call, all runtime data access goes through DMA.
-    // -------------------------------------------------------
+    // ==================================================
     ctrl.init_dram("./data/", image_file);
 
-    // -------------------------------------------------------
+    // ==================================================
     // Inter-router East/West links
-    // -------------------------------------------------------
+    // ==================================================
     sc_signal<sc_lv<FLIT_WIDTH>> r01f,r10f, r12f,r21f, r23f,r32f;
     sc_signal<bool> r01q,r01a, r10q,r10a, r12q,r12a, r21q,r21a, r23q,r23a, r32q,r32a;
     sc_signal<sc_lv<FLIT_WIDTH>> r45f,r54f, r56f,r65f, r67f,r76f;

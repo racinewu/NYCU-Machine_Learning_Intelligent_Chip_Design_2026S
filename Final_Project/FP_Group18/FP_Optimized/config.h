@@ -1,9 +1,9 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-// ============================================================
+// ==================================================
 // Architecture configuration — FP_Optimized
-// ============================================================
+// ==================================================
 
 // Number of cores for each phase
 #define CORES_CONV1   4    // Conv1: 64 output ch / 4  = 16 ch/core
@@ -21,7 +21,7 @@
 // Clock period
 #define CLK_PERIOD_NS 10
 
-// ============================================================
+// ==================================================
 // On-chip SRAM: 4 banks x 128 KB                            [OPT: 1x128KB->4x128KB]
 //
 // Conv stage:
@@ -38,7 +38,7 @@
 //
 // Conv FM Ping-Pong not applicable: Conv3 output = 254KB > 128KB per bank.
 // FC weight Ping-Pong fully implemented: each tile = 32KB = exactly 1 bank.
-// ============================================================
+// ==================================================
 #define SRAM_NUM_BANKS   4
 #define SRAM_BANK_FLOATS 32768   // 128 KB per bank (32768 floats)
 
@@ -46,13 +46,13 @@
 // Sized for largest output FM per PE: Conv3 24ch*13*13=4056 floats -> round to 4096
 #define LOCAL_SRAM_FLOATS 4096   // 16 KB per PE (Conv2-5 partial sum; Conv1 bypasses)
 
-// ============================================================
+// ==================================================
 // Log level
 //   0 = silent
 //   1 = phase-level
 //   2 = tile-level
 //   3 = flit-level
-// ============================================================
+// ==================================================
 #define LOG_LEVEL 2
 
 #include <iostream>
