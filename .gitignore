@@ -18,9 +18,8 @@ Lab/Lab3/code/result_make.log
 Lab/Lab3/code/**/run
 Final_Project/*.zip
 Final_Project/*.pdf
-Final_Project/FP_*/data
-Final_Project/FP_*/run
-Final_Project/FP_*/
+Final_Project/FP_*/**/data
+Final_Project/FP_*/**/run
 *.xlsx
 *.docx
 *.csv
